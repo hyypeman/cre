@@ -25,7 +25,7 @@ def lookup_zola_owner(address: str) -> str:
 
     # Get optional settings
     headless = os.getenv("HEADLESS", "false").lower() == "true"
-    timeout = int(os.getenv("TIMEOUT", "30000"))
+    timeout = 30000
 
     with sync_playwright() as p:
         # Launch the browser with headless mode from environment
@@ -76,33 +76,73 @@ def lookup_zola_owner(address: str) -> str:
             show_owner_button = page.locator('button.a11y-orange[type="submit"]')
             show_owner_button.click()
 
-            # Initialize the solver with context manager to handle reCAPTCHA
+            # Wait a moment for CAPTCHA to appear
+            time.sleep(2)
+
+            # Try to solve CAPTCHA, but continue execution even if it fails
             try:
+                # Initialize the solver with context manager
                 with recaptchav2.SyncSolver(page, capsolver_api_key=api_key) as solver:
                     # Solve the reCAPTCHA
+                    print("Attempting to solve CAPTCHA...")
                     token = solver.solve_recaptcha(wait=True)
-                    print(f"CAPTCHA token: {token}")
-                    if not token:
-                        return "Failed to solve CAPTCHA - no token received"
-                    # Wait for owner information to appear after CAPTCHA is solved
-                    try:
-                        page.wait_for_selector(
-                            "label.data-label:has-text('Owner') + span.datum:not(:empty)",
-                            timeout=20000,  # Increased timeout for loading spinner
-                        )
-                    except Exception:
-                        return "Owner information did not appear after solving CAPTCHA"
+                    print(f"CAPTCHA solution received: {bool(token)}")
             except Exception as captcha_error:
-                return f"Error solving CAPTCHA: {str(captcha_error)}"
+                # Just log the error and continue
+                print(f"CAPTCHA solving error: {str(captcha_error)}")
+
+            # Wait for owner information to appear
+            try:
+                print("Waiting for owner information to appear...")
+                page.wait_for_selector("label.data-label:has-text('Owner')", timeout=10000)
+                print("Owner label found!")
+            except Exception as wait_error:
+                print(f"Error waiting for owner information: {str(wait_error)}")
+                return "Could not find owner information after CAPTCHA"
 
             # Try to get owner information from the data grid
             owner_label = page.locator("label.data-label:has-text('Owner')")
             if owner_label.count() > 0:
-                # Get the associated datum span (owner name)
-                owner_info = (
-                    owner_label.locator("xpath=following-sibling::span").inner_text().strip()
-                )
-                return f"Owner: {owner_info}"
+                try:
+                    # Take a screenshot for debugging
+                    page.screenshot(path="zola_result.png")
+                    print("Screenshot saved as zola_result.png")
+
+                    # Try multiple approaches to get the owner info
+
+                    # Approach 1: Using xpath to get the sibling span
+                    owner_span = owner_label.locator("xpath=following-sibling::span").first
+                    if owner_span.count() > 0:
+                        owner_info = owner_span.inner_text().strip()
+                        if owner_info:
+                            return f"Owner: {owner_info}"
+
+                    # Approach 2: Using CSS selector
+                    owner_row = page.locator("div.data-grid:has(label.data-label:text('Owner'))")
+                    if owner_row.count() > 0:
+                        owner_span = owner_row.locator("span.datum")
+                        if owner_span.count() > 0:
+                            owner_info = owner_span.inner_text().strip()
+                            if owner_info:
+                                return f"Owner: {owner_info}"
+
+                    # Approach 3: Get all data grids and find the one with Owner
+                    data_grids = page.locator("div.data-grid").all()
+                    for grid in data_grids:
+                        label_text = grid.locator("label.data-label").inner_text()
+                        if "Owner" in label_text:
+                            datum = grid.locator("span.datum")
+                            if datum.count() > 0:
+                                owner_info = datum.inner_text().strip()
+                                if owner_info:
+                                    return f"Owner: {owner_info}"
+
+                    # If all approaches fail, return the HTML for debugging
+                    owner_section = page.locator("section.lot-details").inner_html()
+                    return f"Owner information found but could not be extracted. HTML: {owner_section[:500]}..."
+
+                except Exception as extract_error:
+                    return f"Error extracting owner information: {str(extract_error)}"
             else:
                 return "Owner information not found in the expected location"
 
