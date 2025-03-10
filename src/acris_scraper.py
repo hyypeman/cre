@@ -375,14 +375,26 @@ def search_acris(address: str) -> str:
                 
                 deed_file = download_document(page, top_deed_doc['id'])
 
+            property_data = {}
+            property_data['property_info'] = property_info
+            property_data['files'] = []
+            
+            if mortgage_info:
+                property_data['files'].append({
+                    'document_info': mortgage_info,
+                    'document_type': 'mortgage',
+                    'document_filename': mortgage_file,
+                })
+                
+            if deed_info:
+                property_data['files'].append({
+                    'document_info': deed_info,
+                    'document_type': 'deed',
+                    'document_filename': deed_file,
+                })
+
             # Return the formatted response
-            return {
-                "property_info": property_info,
-                "mortgage_info": mortgage_info,
-                "deed_info": deed_info,
-                "mortgage_file": mortgage_file,
-                "deed_file": deed_file
-            }
+            return property_data
 
         except Exception as e:
             
