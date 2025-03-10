@@ -399,14 +399,9 @@ def search_acris(address: str) -> str:
                 if tax_lot_not_found:
                     return f"Tax lot not found for {address}"
                 
-            except Exception as inner_e:
+            except Exception:
                 # If anything goes wrong while checking the new page, fall back to the original error
                 pass
-            
-            
-            if tax_lot_not_found:
-                return f"Tax lot not found for {address}"
-            
             
             return f"Error searching ACRIS: {str(e)}"
 
