@@ -79,16 +79,6 @@ def parse_property_records_table(page):
     # Make sure the table is fully loaded
     wait_until_table_is_loaded(page)
     
-    # Get the table HTML content
-    table_html = page.evaluate('() => document.querySelector("table table").outerHTML')
-    
-    # Check if required headers exist (case insensitive)
-    has_view_header = re.search(r'view', table_html, re.IGNORECASE) is not None
-    has_doc_type_header = re.search(r'document\s+type', table_html, re.IGNORECASE) is not None
-    
-    if not has_view_header or not has_doc_type_header:
-        print(f"Warning: Required headers missing. View header: {has_view_header}, Document Type header: {has_doc_type_header}")
-    
     # Find all data rows (rows with background color)
     results = []
     
@@ -283,13 +273,15 @@ def search_acris(address: str) -> str:
             if actual_street_number != street_number or actual_street_name.strip() != street_name.strip():
                 return "Address input validation failed"
             
-            page.click('input[type="submit"]')
+            with page.context.expect_page() as new_page_info:
+                page.click('input[type="submit"]')
             
             # Wait for navigation to complete
             page.wait_for_load_state('networkidle')
             
             # Wait for the btn_docsearch button to be visible and stable
-            page.wait_for_selector('input[name="btn_docsearch"]', state='visible')
+            page.wait_for_selector('input[name="btn_docsearch"]', state='visible', timeout=15000)
+            
             page.click('input[name="btn_docsearch"]', timeout=30000)
 
             # Wait for page to respond after clicking btn_docsearch
@@ -383,16 +375,46 @@ def search_acris(address: str) -> str:
                 
                 deed_file = download_document(page, top_deed_doc['id'])
 
+            property_data = {}
+            property_data['property_info'] = property_info
+            property_data['files'] = []
+            
+            if mortgage_info:
+                property_data['files'].append({
+                    'document_info': mortgage_info,
+                    'document_type': 'mortgage',
+                    'document_filename': mortgage_file,
+                })
+                
+            if deed_info:
+                property_data['files'].append({
+                    'document_info': deed_info,
+                    'document_type': 'deed',
+                    'document_filename': deed_file,
+                })
+
             # Return the formatted response
-            return {
-                "property_info": property_info,
-                "mortgage_info": mortgage_info,
-                "deed_info": deed_info,
-                "mortgage_file": mortgage_file,
-                "deed_file": deed_file
-            }
+            return property_data
 
         except Exception as e:
+            
+            try:
+                # Safely try to access the new page that might have been created
+                new_page = new_page_info.value
+                
+                # Add a timeout to wait_for_load_state to prevent hanging
+                new_page.wait_for_load_state(timeout=10000)
+                
+                # Check if the tax lot not found error is visible
+                tax_lot_not_found = new_page.locator('//span[@id="error_box"]/b/font[text()="TAX LOT NOT FOUND"]').is_visible(timeout=5000)
+                
+                if tax_lot_not_found:
+                    return f"Tax lot not found for {address}"
+                
+            except Exception:
+                # If anything goes wrong while checking the new page, fall back to the original error
+                pass
+            
             return f"Error searching ACRIS: {str(e)}"
 
         finally:
