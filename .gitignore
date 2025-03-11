@@ -32,4 +32,7 @@ ENV/
 *.swo
 
 # Environment variables
-.env 
+.env
+
+documents/
+*.png 
