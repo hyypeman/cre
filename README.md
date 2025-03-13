@@ -37,6 +37,7 @@ pip install -r requirements.txt
 3. Install Playwright browsers:
 ```bash
 playwright install chromium
+playwright install firefox
 ```
 
 4. Set up environment variables by creating a `.env` file:
@@ -52,6 +53,10 @@ TIMEOUT=30000  # Timeout in milliseconds for page operations
 LANGCHAIN_API_KEY=your_langchain_api_key
 LANGCHAIN_TRACING_V2=true
 OPENAI_API_KEY=your_openai_api_key
+
+# Credentials for SHART property
+PROPERTY_SHARK_EMAIL=
+PROPERTY_SHARK_PASSWORD=
 ```
 
 ## Usage
