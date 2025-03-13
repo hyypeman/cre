@@ -6,8 +6,8 @@ import logging
 from langgraph.graph import START, StateGraph, END
 from dotenv import load_dotenv
 from IPython.display import Image
-from state import InputState, PropertyResearchState
-from nodes import (
+from .state import InputState, PropertyResearchState
+from .nodes import (
     InitializerNode,
     ZolaNode,
     AcrisNode,
@@ -26,9 +26,8 @@ load_dotenv()
 
 
 class PropertyResearchGraph:
-    def __init__(self, address=None, job_id=None):
+    def __init__(self, address=None):
         self.address = address
-        self.job_id = job_id
 
         # Initialize InputState
         self.input_state = InputState(address=address)
@@ -118,25 +117,34 @@ class PropertyResearchGraph:
 
 
 def main():
-    """Create and save a workflow diagram"""
-    graph = PropertyResearchGraph()
-    app = graph.compile()
-    image = Image(app.get_graph().draw_mermaid_png())
-    with open("workflow_diagram.png", "wb") as f:
-        f.write(image.data)
-    print("Workflow diagram saved as workflow_diagram.png")
-    return app
+    """
+    Main function to run the property research workflow.
 
-
-if __name__ == "__main__":
-    # Example usage
+    1. Gets the property address from user input
+    2. Creates and compiles the workflow graph
+    3. Saves a visualization of the workflow
+    4. Runs the workflow and returns the results
+    """
+    # Get address from user input
     address = input("Enter property address to research: ")
     if not address:
         address = "798 LEXINGTON AVENUE, New York, NY"
         print(f"Using default address: {address}")
 
-    # Create the graph with the address and run the workflow
+    # Create and compile the graph
     graph = PropertyResearchGraph(address=address)
+    app = graph.compile()
+
+    # Save workflow visualization
+    try:
+        image = Image(app.get_graph().draw_mermaid_png())
+        with open("workflow_diagram.png", "wb") as f:
+            f.write(image.data)
+        print("Workflow diagram saved as workflow_diagram.png")
+    except Exception as e:
+        logger.warning(f"Could not save workflow diagram: {e}")
+
+    # Run the workflow
     result = graph.run()
 
     # Print any errors encountered
@@ -144,3 +152,9 @@ if __name__ == "__main__":
         print("\nErrors encountered during research:")
         for error in result["errors"]:
             print(f"- {error}")
+
+    return result
+
+
+if __name__ == "__main__":
+    main()
