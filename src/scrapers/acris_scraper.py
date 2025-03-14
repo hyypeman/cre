@@ -1,10 +1,8 @@
 from playwright.sync_api import sync_playwright
-import time
 import re
 import os
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
-import traceback
 
 # Load environment variables
 load_dotenv()
@@ -254,10 +252,7 @@ def search_acris(address: str) -> str:
             page.set_default_timeout(timeout)
 
             # Navigate to ACRIS search page
-            # page.goto("https://a836-acris.nyc.gov/DS/DocumentSearch/BBLSearch")
             page.goto('https://a836-acris.nyc.gov/CP/LookUp/Index')
-            
-            # page.goto("https://a836-acris.nyc.gov/DS/DocumentSearch/BBL")
             
             # Select Manhattan (Borough 1) by default
             page.select_option('select[name="select_borough"]', "1")
@@ -325,14 +320,14 @@ def search_acris(address: str) -> str:
             # Find first mortgage document and first deed document
             for record in records:
                 doc_type = record['document_type'].upper()
-                doc_types = [item.strip() for item in doc_type.split(',')]
+                # doc_types =  [item.strip() for item in doc_type.split(',')]
                 
                 # Check for mortgage
-                if 'MORTGAGE' in doc_types and not top_mortgage_doc:
+                if 'MORTGAGE' == doc_type and not top_mortgage_doc:
                     top_mortgage_doc = record
                 
                 # Check for deed
-                if 'DEED' in doc_types and not top_deed_doc:
+                if 'DEED' == doc_type and not top_deed_doc:
                     top_deed_doc = record
                 
                 # Break early if we've found both
