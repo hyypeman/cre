@@ -57,6 +57,7 @@ OPENAI_API_KEY=your_openai_api_key
 # Credentials for SHART property
 PROPERTY_SHARK_EMAIL=
 PROPERTY_SHARK_PASSWORD=
+PROPERTY_SHARK_IMAP_PASSWORD=
 ```
 
 ## Usage

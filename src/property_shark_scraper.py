@@ -1,11 +1,51 @@
+import re
+
 from playwright.sync_api import sync_playwright, Page
 import time
 import os
 from dotenv import load_dotenv
 import traceback
+from imapclient import IMAPClient
+import email
+from email.policy import default
 
 # Load environment variables
 load_dotenv()
+
+IMAP_SERVER = "imap.gmail.com"
+SUBJECT_FILTER = "Your security code"
+WAIT_TIME = 120  # 2 minutes (in seconds)
+
+
+def get_security_code():
+    with IMAPClient(IMAP_SERVER) as client:
+        client.login(os.getenv("PROPERTY_SHARK_EMAIL", ""), os.getenv("PROPERTY_SHARK_IMAP_PASSWORD", ""))
+        client.select_folder("INBOX")
+
+        start_time = time.time()
+        while time.time() - start_time < WAIT_TIME:
+            messages = client.search(['UNSEEN', 'SUBJECT', SUBJECT_FILTER])
+            if messages:
+                for msg_id in messages:
+                    raw_message = client.fetch([msg_id], ["RFC822"])
+                    msg = email.message_from_bytes(raw_message[msg_id][b'RFC822'], policy=default)
+
+                    # Extract text content from email
+                    body = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                body = part.get_payload(decode=True).decode()
+                    else:
+                        body = msg.get_payload(decode=True).decode()
+
+                    # Extract security code (assumes it's a 5-digit number)
+                    match = re.search(r"\b\d{5}\b", body)
+                    if match:
+                        return match.group()  # Return the security code
+            time.sleep(10)  # Wait 10 seconds before checking again
+
+        return None
 
 
 def login(page: Page):
@@ -56,7 +96,12 @@ def login(page: Page):
         # Check if a security code is required (i.e., two-factor authentication).
         if "PropertyShark Account Security" in page.content():
             print('Need get code from email')
-            code = input('Code ->')
+            code = get_security_code()
+            if not code:
+                print('Not find code in email')
+                return False
+
+            print("Find code -> %s" % code)
             code_xpath = "//input[@name='security_code']"
             page.query_selector(code_xpath).fill(code)
 
