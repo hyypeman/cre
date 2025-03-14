@@ -13,6 +13,8 @@ from .nodes import (
     AcrisNode,
     DocumentProcessorNode,
     AnalyzerNode,
+    PropertySharkNode,
+    OpenCorporatesNode,
 )
 
 # Set up logging
@@ -42,6 +44,8 @@ class PropertyResearchGraph:
         self.zola_node = ZolaNode()
         self.acris_node = AcrisNode()
         self.document_processor = DocumentProcessorNode()
+        self.property_shark_node = PropertySharkNode()
+        self.opencorporates_node = OpenCorporatesNode()
         self.analyzer = AnalyzerNode()
 
     def _build_workflow(self):
@@ -54,6 +58,8 @@ class PropertyResearchGraph:
         self.workflow.add_node("zola_search", self.zola_node.run)
         self.workflow.add_node("acris_search", self.acris_node.run)
         self.workflow.add_node("process_documents", self.document_processor.run)
+        self.workflow.add_node("property_shark_search", self.property_shark_node.run)
+        self.workflow.add_node("search_opencorporates", self.opencorporates_node.run)
         self.workflow.add_node("analyze_owner", self.analyzer.run)
 
         # Add edges
@@ -66,8 +72,22 @@ class PropertyResearchGraph:
             "acris_search", self._has_documents, {True: "process_documents", False: "analyze_owner"}
         )
 
-        # Connect document processor to analyzer
-        self.workflow.add_edge("process_documents", "analyze_owner")
+        # Connect document processor to conditional check for owner info
+        self.workflow.add_conditional_edges(
+            "process_documents",
+            self._has_owner_info,
+            {True: "search_opencorporates", False: "property_shark_search"},
+        )
+
+        # Connect property shark to conditional check for owner info
+        self.workflow.add_conditional_edges(
+            "property_shark_search",
+            self._has_owner_info,
+            {True: "search_opencorporates", False: "analyze_owner"},
+        )
+
+        # Connect opencorporates to analyzer
+        self.workflow.add_edge("search_opencorporates", "analyze_owner")
 
         # Connect analyzer to end
         self.workflow.add_edge("analyze_owner", END)
@@ -83,6 +103,10 @@ class PropertyResearchGraph:
             and "files" in acris_results
             and len(acris_results["files"]) > 0
         )
+
+    def _has_owner_info(self, state: PropertyResearchState) -> bool:
+        """Check if we have owner information (name or LLC) to proceed with."""
+        return state.get("owner_name") is not None
 
     def compile(self):
         """Compile the workflow"""
