@@ -18,11 +18,11 @@ class ZolaNode:
         print(f"🏢 Searching ZoLa for: {state['address']}")
 
         try:
-            zola_results = lookup_zola_owner(state["address"])
+            zola_owner = lookup_zola_owner(state["address"])
 
             return {
                 **state,
-                "zola_results": zola_results,
+                "zola_owner_name": zola_owner,
                 "current_step": "ZoLa search completed",
                 "next_steps": ["acris_search"],
             }

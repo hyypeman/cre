@@ -94,10 +94,10 @@ class PropertyResearchGraph:
 
     def _has_documents(self, state: PropertyResearchState) -> bool:
         """Check if ACRIS returned documents that need processing."""
-        if not state.get("acris_results"):
+        if not state.get("acris_property_records"):
             return False
 
-        acris_results = state["acris_results"]
+        acris_results = state["acris_property_records"]
         return (
             isinstance(acris_results, dict)
             and "files" in acris_results
@@ -120,11 +120,11 @@ class PropertyResearchGraph:
             # Initialize the full PropertyResearchState from the input state
             state = PropertyResearchState(
                 address=self.input_state["address"],
-                zola_results=None,
-                acris_results=None,
-                documents=None,
-                property_shark_results=None,
-                open_corporates_results=None,
+                zola_owner_name=None,
+                acris_property_records=None,
+                property_ownership_records=None,
+                property_shark_ownership_data=None,
+                company_registry_data=None,
                 person_search_results=None,
                 owner_name=None,
                 owner_type=None,

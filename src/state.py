@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Optional, TypedDict
+from typing import Dict, List, Any, Optional, TypedDict, Union
 from typing_extensions import Required
 
 
@@ -14,45 +14,83 @@ class InputState(TypedDict, total=False):
 
 
 class PropertyResearchState(InputState):
-    # zola just returns the "owner" field
-    # it can often be a company, but it can also be an individual
-    zola_results: Optional[str]
+    """
+    Complete state for property research containing all data collected during research.
 
-    # ACRIS data
-    # property info, what files we downloaded, and which one is mortgage and which one is deed
-    acris_results: Optional[Dict[str, Any]]
+    This state tracks information from multiple data sources and the overall research process.
+    """
 
-    # Property Ownership Record after reading the mortgage and deed:
-    #  - property_address: The full address of the property.
-    #  - entity_owner: The business entity that legally owns the property.
-    #  - individual_owners: A list of individuals associated with the ownership.
-    #  - name: The individual's full name.
-    #  - title: Their role within the owning entity.
-    #  - ownership_evidence: A brief description of the legal document proving ownership.
-    documents: Optional[List[Dict[str, Any]]]
+    # ZoLa data - basic property ownership information
+    zola_owner_name: Optional[str]
+    """Owner name from NYC's Zoning & Land Use database (can be individual or company)"""
 
-    # Property Shark Data:
-    # - real_owners: Key individuals linked to the property.
-    #   - name: Full name and role.
-    #   - real_owner: Affiliated entity.
-    #   - address: Listed address.
-    #   - phones: Associated phone numbers.
-    #
-    # - registered_owners: Official property owners.
-    #   - data: Includes entity name, address, source, and last recorded update.
-    property_shark_results: Optional[Dict[str, Any]]
+    # ACRIS data - property documents and information
+    acris_property_records: Optional[Dict[str, Any]]
+    """
+    Property records from NYC's ACRIS system, including:
+    - property_info: Basic property information
+    - files: Downloaded document files (deeds, mortgages)
+    - document_types: Classification of documents (which is deed, which is mortgage)
+    """
 
-    # Open Corporates data
-    open_corporates_results: Optional[Dict[str, Any]]
+    # Processed document data - extracted from property documents
+    property_ownership_records: Optional[List[Dict[str, Any]]]
+    """
+    Structured ownership information extracted from property documents:
+    - property_address: The full address of the property
+    - entity_owner: The business entity that legally owns the property
+    - individual_owners: List of individuals associated with ownership
+      - name: Individual's full name
+      - title: Their role within the owning entity
+    - ownership_evidence: Description of legal document proving ownership
+    """
 
-    # Person search results
+    # PropertyShark data - detailed ownership information
+    property_shark_ownership_data: Optional[Dict[str, Any]]
+    """
+    Detailed ownership information from PropertyShark:
+    - real_owners: Key individuals linked to the property
+      - name: Full name and role
+      - real_owner: Affiliated entity
+      - address: Listed address
+      - phones: Associated phone numbers
+    - registered_owners: Official property owners
+      - data: Entity name, address, source, and last recorded update
+    """
+
+    # OpenCorporates data - company information for LLC owners
+    company_registry_data: Optional[Dict[str, Any]]
+    """
+    Company information from OpenCorporates for LLC owners:
+    - company_details: Basic company information
+    - officers: Company officers and directors
+    - addresses: Registered addresses
+    - incorporation_date: When the company was formed
+    """
+
+    # Person search results - information about individual owners
     person_search_results: Optional[Dict[str, Any]]
+    """
+    Information about individual owners from people search services:
+    - contact_info: Phone numbers, email addresses
+    - addresses: Current and previous addresses
+    - relatives: Family members
+    - associates: Business associates
+    """
 
-    # Extracted owner information
+    # Extracted owner information - consolidated from all sources
     owner_name: Optional[str]
+    """Primary owner name (individual or company) extracted from all sources"""
+
     owner_type: Optional[str]
+    """Type of owner (individual, llc, corporation, trust, etc.)"""
 
     # Process tracking
     current_step: str
+    """Current step in the research process"""
+
     next_steps: List[str]
+    """List of steps to execute next"""
+
     errors: List[str]
+    """List of errors encountered during research"""

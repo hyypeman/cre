@@ -18,11 +18,11 @@ class PropertySharkNode:
         print(f"🦈 Searching PropertyShark for: {state['address']}")
 
         try:
-            property_shark_results = search_shark(state["address"])
+            property_shark_ownership_data = search_shark(state["address"])
 
             return {
                 **state,
-                "property_shark_results": property_shark_results,
+                "property_shark_ownership_data": property_shark_ownership_data,
                 "current_step": "PropertyShark search completed",
                 "next_steps": ["search_opencorporates"]
                 if state.get("owner_name")

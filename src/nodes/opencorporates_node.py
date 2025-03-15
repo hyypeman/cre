@@ -26,11 +26,11 @@ class OpenCorporatesNode:
         print(f"🏢 Searching OpenCorporates for: {state['owner_name']}")
 
         try:
-            open_corporates_results = search_opencorporate(state["owner_name"])
+            company_registry_data = search_opencorporate(state["owner_name"])
 
             return {
                 **state,
-                "open_corporates_results": open_corporates_results,
+                "company_registry_data": company_registry_data,
                 "current_step": "OpenCorporates search completed",
                 "next_steps": ["analyze_owner"],
             }

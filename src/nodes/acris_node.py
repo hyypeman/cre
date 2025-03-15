@@ -18,11 +18,11 @@ class AcrisNode:
         print(f"📄 Searching ACRIS for: {state['address']}")
 
         try:
-            acris_results = search_acris(state["address"])
+            acris_property_records = search_acris(state["address"])
 
             return {
                 **state,
-                "acris_results": acris_results,
+                "acris_property_records": acris_property_records,
                 "current_step": "ACRIS search completed",
                 "next_steps": ["process_documents"],
             }
