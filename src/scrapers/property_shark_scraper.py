@@ -19,16 +19,18 @@ WAIT_TIME = 120  # 2 minutes (in seconds)
 
 def get_security_code():
     with IMAPClient(IMAP_SERVER) as client:
-        client.login(os.getenv("PROPERTY_SHARK_EMAIL", ""), os.getenv("PROPERTY_SHARK_IMAP_PASSWORD", ""))
+        client.login(
+            os.getenv("PROPERTY_SHARK_EMAIL", ""), os.getenv("PROPERTY_SHARK_IMAP_PASSWORD", "")
+        )
         client.select_folder("INBOX")
 
         start_time = time.time()
         while time.time() - start_time < WAIT_TIME:
-            messages = client.search(['UNSEEN', 'SUBJECT', SUBJECT_FILTER])
+            messages = client.search(["UNSEEN", "SUBJECT", SUBJECT_FILTER])
             if messages:
                 for msg_id in messages:
                     raw_message = client.fetch([msg_id], ["RFC822"])
-                    msg = email.message_from_bytes(raw_message[msg_id][b'RFC822'], policy=default)
+                    msg = email.message_from_bytes(raw_message[msg_id][b"RFC822"], policy=default)
 
                     # Extract text content from email
                     body = ""
@@ -85,7 +87,9 @@ def login(page: Page):
 
         # Fill in the password field similarly.
         password_xpath = '//*[@id="password"]'
-        page.query_selector(password_xpath).fill(os.getenv("PROPERTY_SHARK_PASSWORD", "test@mail.com"))
+        page.query_selector(password_xpath).fill(
+            os.getenv("PROPERTY_SHARK_PASSWORD", "test@mail.com")
+        )
 
         # Click the submit button to attempt login.
         submit_xpath = '//*[@id="sbo"]'
@@ -95,10 +99,10 @@ def login(page: Page):
 
         # Check if a security code is required (i.e., two-factor authentication).
         if "PropertyShark Account Security" in page.content():
-            print('Need get code from email')
+            print("Need get code from email")
             code = get_security_code()
             if not code:
-                print('Not find code in email')
+                print("Not find code in email")
                 return False
 
             print("Find code -> %s" % code)
@@ -129,7 +133,7 @@ def login(page: Page):
 
         # Confirm login success by checking for the presence of "My Account" text.
         if "My Account" in page.content():
-            print('Login success')
+            print("Login success")
             return True
 
     except Exception:
@@ -190,7 +194,7 @@ def search(address: str, page: Page):
             return True
         else:
             # Log if no search results are found for the provided address.
-            print('Not found search results')
+            print("Not found search results")
     except Exception:
         # Capture and print the complete traceback for debugging in case of errors.
         error_details = traceback.format_exc()
@@ -218,14 +222,11 @@ def parse_details(page: Page) -> dict:
     """
 
     # Initialize the dictionary to store parsed owner details.
-    details = {
-        'real_owners': [],
-        'registered_owners': []
-    }
+    details = {"real_owners": [], "registered_owners": []}
 
     try:
         # --- Parsing Real Owners ---
-        print('Start search real owners')
+        print("Start search real owners")
         # XPath to locate real owner elements on the page.
         real_owners_xpath = '//*[@id="real_owners_list"]/div'
         real_owners = page.query_selector_all(real_owners_xpath)
@@ -238,37 +239,41 @@ def parse_details(page: Page) -> dict:
                 # Extract the owner's name if available.
                 name_element = real_owner.query_selector('//div[@class="name"]')
                 if name_element:
-                    detail['name'] = name_element.text_content().strip()
+                    detail["name"] = name_element.text_content().strip()
 
                 # Extract the real owner identifier or description.
-                owner_id_element = real_owner.query_selector("//div/span[contains(@id, 'real_owner')]")
+                owner_id_element = real_owner.query_selector(
+                    "//div/span[contains(@id, 'real_owner')]"
+                )
                 if owner_id_element:
-                    detail['real_owner'] = owner_id_element.text_content().strip()
+                    detail["real_owner"] = owner_id_element.text_content().strip()
 
                 # Extract the owner's address if present.
                 address_element = real_owner.query_selector('//div[@class="address_pin"]')
                 if address_element:
-                    detail['address'] = address_element.text_content().strip()
+                    detail["address"] = address_element.text_content().strip()
 
                 # Extract phone numbers if available.
                 phone_container = real_owner.query_selector('//div[contains(@class, "reo-phones")]')
                 if phone_container:
                     phones = []
                     # XPath to locate individual phone elements.
-                    phones_selectors = real_owner.query_selector_all('//div[contains(@id, "invalid_phone_")]')
+                    phones_selectors = real_owner.query_selector_all(
+                        '//div[contains(@id, "invalid_phone_")]'
+                    )
                     for phone in phones_selectors:
-                        phone_link = phone.query_selector('//a')
+                        phone_link = phone.query_selector("//a")
                         if phone_link:
                             phones.append(phone_link.text_content().strip())
                     if phones:
-                        detail['phones'] = phones
+                        detail["phones"] = phones
 
                 # Append the details if any information was extracted.
                 if detail:
-                    details['real_owners'].append(detail)
+                    details["real_owners"].append(detail)
 
         # --- Parsing Registered (Current) Owners ---
-        print('Start search current owners')
+        print("Start search current owners")
         # XPath to locate rows in the current owners table.
         current_owners_xpath = '//*[@id="current_owners_my_table_table_ajax"]/tbody/tr'
         current_owners = page.query_selector_all(current_owners_xpath)
@@ -277,17 +282,19 @@ def parse_details(page: Page) -> dict:
         if current_owners:
             for current_owner in current_owners:
                 # Initialize a detail dictionary with a 'data' key to store owner info.
-                detail = {'data': []}
+                detail = {"data": []}
 
                 # Locate all elements containing detailed lines about the owner.
-                details_lines = current_owner.query_selector_all("//div[contains(@class, 'details-line')]")
+                details_lines = current_owner.query_selector_all(
+                    "//div[contains(@class, 'details-line')]"
+                )
                 if details_lines:
                     for line in details_lines:
-                        detail['data'].append(line.text_content().strip())
+                        detail["data"].append(line.text_content().strip())
 
                 # Add the detail to the list if any data was extracted.
-                if detail['data']:
-                    details['registered_owners'].append(detail)
+                if detail["data"]:
+                    details["registered_owners"].append(detail)
 
         return details
 
@@ -327,8 +334,8 @@ def search_shark(address: str) -> dict:
             headless=headless,
             args=[
                 "--disable-debugging-pane",  # Disable the debugging pane for a cleaner UI.
-                "--disable-automation"       # Disable automation flags to reduce detection.
-            ]
+                "--disable-automation",  # Disable automation flags to reduce detection.
+            ],
         )
 
         try:
@@ -340,18 +347,18 @@ def search_shark(address: str) -> dict:
 
             # Perform login; if it fails, log the error and return an empty dictionary.
             if not login(page):
-                print('Something went wrong in login process')
+                print("Something went wrong in login process")
                 return {}
 
             # Execute the property search using the provided address.
             if not search(address, page):
-                print('Something went wrong in search process')
+                print("Something went wrong in search process")
                 return {}
 
             # Parse the property details from the current page.
             property_owner_data = parse_details(page)
             if not property_owner_data:
-                print('Something went wrong in parsing details')
+                print("Something went wrong in parsing details")
                 return {}
 
             # Return the successfully parsed property owner data.
@@ -368,7 +375,7 @@ def search_shark(address: str) -> dict:
 
 
 if __name__ == "__main__":
-    test_address = "798 LEXINGTON AVENUE, New York, NY"
+    test_address = "19 W 34th Street, New York, NY"
     results = search_shark(test_address)
     print(f"SHARK results for {test_address}:")
     print(results)

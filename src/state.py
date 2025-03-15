@@ -14,37 +14,32 @@ class InputState(TypedDict, total=False):
 
 
 class PropertyResearchState(InputState):
-    """
-    Complete state for property research containing all data collected during research.
-
-    Data fields:
-    - ZoLa data: Owner information from ZoLa
-    - ACRIS data: Property information and documents from ACRIS
-    - Document data: Extracted information from property documents
-    - Property Shark data: Additional property information (not implemented)
-    - Open Corporates data: Company information for LLC owners (not implemented)
-    - Person search data: Information about individual owners (not implemented)
-
-    Owner information:
-    - owner_name: Extracted owner name (individual or company)
-    - owner_type: Type of owner (individual, llc, corporation, etc.)
-
-    Process tracking:
-    - current_step: Current step in the research process
-    - next_steps: List of steps to execute next
-    - errors: List of errors encountered during research
-    """
-
-    # ZoLa data
+    # zola just returns the "owner" field
+    # it can often be a company, but it can also be an individual
     zola_results: Optional[str]
 
     # ACRIS data
+    # property info, what files we downloaded, and which one is mortgage and which one is deed
     acris_results: Optional[Dict[str, Any]]
 
-    # Document processing data
+    # Property Ownership Record after reading the mortgage and deed:
+    #  - property_address: The full address of the property.
+    #  - entity_owner: The business entity that legally owns the property.
+    #  - individual_owners: A list of individuals associated with the ownership.
+    #  - name: The individual's full name.
+    #  - title: Their role within the owning entity.
+    #  - ownership_evidence: A brief description of the legal document proving ownership.
     documents: Optional[List[Dict[str, Any]]]
 
-    # Property Shark data
+    # Property Shark Data:
+    # - real_owners: Key individuals linked to the property.
+    #   - name: Full name and role.
+    #   - real_owner: Affiliated entity.
+    #   - address: Listed address.
+    #   - phones: Associated phone numbers.
+    #
+    # - registered_owners: Official property owners.
+    #   - data: Includes entity name, address, source, and last recorded update.
     property_shark_results: Optional[Dict[str, Any]]
 
     # Open Corporates data
