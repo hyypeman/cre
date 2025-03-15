@@ -85,6 +85,10 @@ class PropertyResearchState(InputState):
     owner_type: Optional[str]
     """Type of owner (individual, llc, corporation, trust, etc.)"""
 
+    # Contact information
+    contact_number: Optional[str]
+    """Primary contact phone number for the owner, extracted from PropertyShark or people search services"""
+
     # Process tracking
     current_step: str
     """Current step in the research process"""

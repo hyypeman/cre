@@ -19,9 +19,10 @@ class AnalyzerNode:
         """
         Analyze data to determine owner information.
 
-        1. Extracts owner information from ZoLa and ACRIS data
+        1. Extracts owner information from all available data sources
         2. Determines if the owner is an individual or LLC/company
-        3. Sets this as the final output of the workflow
+        3. Extracts contact number from PropertyShark data if available
+        4. Sets this as the final output of the workflow
         """
         logger.info("🧠 Analyzing property data to determine owner information")
         print("🧠 Analyzing property data to determine owner information")
@@ -30,12 +31,16 @@ class AnalyzerNode:
             # Extract owner information with LLM
             owner_info = self._extract_owner_info(state)
 
+            # Extract contact number from PropertyShark data if available
+            contact_number = self._extract_contact_number(state)
+
             # Print the owner information as JSON
             owner_output = {
                 "owner_name": owner_info["owner_name"],
                 "owner_type": owner_info["owner_type"],
                 "confidence": owner_info["confidence"],
                 "address": state["address"],
+                "contact_number": contact_number,
             }
 
             print("\n" + "=" * 50)
@@ -49,6 +54,7 @@ class AnalyzerNode:
                 **state,
                 "owner_name": owner_info["owner_name"],
                 "owner_type": owner_info["owner_type"],
+                "contact_number": contact_number,
                 "current_step": "Analysis completed",
                 "next_steps": ["complete"],
             }
@@ -81,6 +87,22 @@ class AnalyzerNode:
                 "next_steps": ["complete"],
             }
 
+    def _extract_contact_number(self, state: PropertyResearchState) -> str:
+        """Extract contact number from PropertyShark data."""
+        contact_number = "Not available"
+
+        if state.get("property_shark_ownership_data"):
+            ps_data = state["property_shark_ownership_data"]
+
+            # Try to extract phone number from real_owners if available
+            if isinstance(ps_data, dict) and "real_owners" in ps_data:
+                for owner in ps_data["real_owners"]:
+                    if "phones" in owner and owner["phones"]:
+                        contact_number = owner["phones"][0]  # Take the first phone number
+                        break
+
+        return contact_number
+
     def _extract_owner_info(self, state: PropertyResearchState) -> dict:
         """Extract owner information using LLM."""
         logger.info("Extracting owner information with LLM")
@@ -90,14 +112,23 @@ class AnalyzerNode:
         Analyze the following property ownership information:
         
         Address: {state["address"]}
-        ZoLa Results: {state.get("zola_results", "Not available")}
-        ACRIS Results: {state.get("acris_results", "Not available")}
-        Document Analysis: {state.get("documents", "Not available")}
         
-        Extract and provide ONLY the following in JSON format:
-        1. owner_name: The most likely owner name (individual or company)
+        ZoLa Owner Name: {state.get("zola_owner_name", "Not available")}
+        
+        ACRIS Property Records: {state.get("acris_property_records", "Not available")}
+        
+        Property Ownership Records (from documents): {state.get("property_ownership_records", "Not available")}
+        
+        PropertyShark Ownership Data: {state.get("property_shark_ownership_data", "Not available")}
+        
+        Company Registry Data (from OpenCorporates): {state.get("company_registry_data", "Not available")}
+        
+        Based on all available information, extract and provide ONLY the following in JSON format:
+        1. owner_name: The most likely owner name (individual or company). If an LLC is found and OpenCorporates data is available, prefer the individual name from OpenCorporates over the LLC name.
         2. owner_type: Either "individual", "llc", "corporation", or "unknown"
         3. confidence: Your confidence level (high, medium, low)
+        
+        If there are conflicting owner names from different sources, use your judgment to determine the most likely owner based on the available evidence.
         """
 
         messages = [
