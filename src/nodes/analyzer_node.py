@@ -15,7 +15,7 @@ class AnalyzerNode:
         """Initialize the analyzer node."""
         self.llm = ChatOpenAI(model=model_name, temperature=temperature)
 
-    def run(self, state: PropertyResearchState) -> PropertyResearchState:
+    def run(self, state: PropertyResearchState) -> dict:
         """
         Analyze data to determine owner information.
 
@@ -51,7 +51,6 @@ class AnalyzerNode:
 
             # Create the final state
             final_state = {
-                **state,
                 "owner_name": owner_info["owner_name"],
                 "owner_type": owner_info["owner_type"],
                 "contact_number": contact_number,
@@ -65,11 +64,13 @@ class AnalyzerNode:
             print("=" * 50)
 
             # Create a simplified version of the state for display
-            display_state = {
-                k: v for k, v in final_state.items() if v is not None and k != "errors"
-            }
+            display_state = {k: v for k, v in state.items() if v is not None and k != "errors"}
             if state["errors"]:
                 display_state["errors"] = state["errors"]
+
+            # Add the new fields from final_state
+            for k, v in final_state.items():
+                display_state[k] = v
 
             print(json.dumps(display_state, indent=2, default=str))
             print("=" * 50)
@@ -81,8 +82,7 @@ class AnalyzerNode:
             logger.error(error_msg)
 
             return {
-                **state,
-                "errors": state["errors"] + [error_msg],
+                "errors": [error_msg],
                 "current_step": "Owner analysis failed",
                 "next_steps": ["complete"],
             }

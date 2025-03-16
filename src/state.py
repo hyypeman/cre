@@ -1,5 +1,6 @@
-from typing import Dict, List, Any, Optional, TypedDict, Union
+from typing import Dict, List, Any, Optional, TypedDict, Union, Annotated
 from typing_extensions import Required
+import operator
 
 
 class InputState(TypedDict, total=False):
@@ -20,8 +21,14 @@ class PropertyResearchState(InputState):
     This state tracks information from multiple data sources and the overall research process.
     """
 
+    # Use Annotated with a reducer to handle concurrent updates
+    # The lambda function returns the first non-None value
+    address: Annotated[str, lambda x, y: x or y]
+    """Property address being researched"""
+
     # ZoLa data - basic property ownership information
-    zola_owner_name: Optional[str]
+    # Use Annotated with a reducer to handle concurrent updates
+    zola_owner_name: Annotated[Optional[str], lambda x, y: x or y]
     """Owner name from NYC's Zoning & Land Use database (can be individual or company)"""
 
     # ACRIS data - property documents and information
@@ -89,12 +96,12 @@ class PropertyResearchState(InputState):
     contact_number: Optional[str]
     """Primary contact phone number for the owner, extracted from PropertyShark or people search services"""
 
-    # Process tracking
-    current_step: str
+    # Process tracking - use Annotated with reducers to handle concurrent updates
+    current_step: Annotated[str, lambda x, y: y]  # Take the latest step
     """Current step in the research process"""
 
-    next_steps: List[str]
+    next_steps: Annotated[List[str], operator.add]  # Combine lists
     """List of steps to execute next"""
 
-    errors: List[str]
+    errors: Annotated[List[str], operator.add]  # Combine error lists
     """List of errors encountered during research"""

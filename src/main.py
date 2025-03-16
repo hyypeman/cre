@@ -4,7 +4,6 @@ import os
 import logging
 
 from langgraph.graph import START, StateGraph, END
-from langgraph.graph.graph import CompiledGraph
 from dotenv import load_dotenv
 from IPython.display import Image
 from .state import InputState, PropertyResearchState
@@ -33,11 +32,7 @@ load_dotenv()
 class PropertyResearchGraph:
     def __init__(self, address=None):
         self.address = address
-
-        # Initialize InputState
         self.input_state = InputState(address=address)
-
-        # Initialize nodes and build workflow
         self._init_nodes()
         self._build_workflow()
 
@@ -55,7 +50,7 @@ class PropertyResearchGraph:
 
     def _build_workflow(self):
         """Configure the state graph workflow"""
-        # Build the graph
+        # Build the graph with checkpointing to handle parallel execution
         self.workflow = StateGraph(PropertyResearchState)
 
         # Add nodes
@@ -69,76 +64,36 @@ class PropertyResearchGraph:
         self.workflow.add_node("search_true_people", self.true_people_search_node.run)
         self.workflow.add_node("analyze_owner", self.analyzer.run)
 
-        # Define a parallel branch for initial data collection
-        def join_parallel_results(state_dict):
-            """Join results from parallel branches into a single state."""
-            # Start with the state from any branch (they all have the same input)
-            joined_state = state_dict["zola_search"].copy()
-
-            # Add results from each branch
-            if "acris_search" in state_dict:
-                joined_state["acris_property_records"] = state_dict["acris_search"].get(
-                    "acris_property_records"
-                )
-
-                # If documents were processed, include those results
-                if "process_documents" in state_dict:
-                    joined_state["property_ownership_records"] = state_dict[
-                        "process_documents"
-                    ].get("property_ownership_records")
-
-            if "property_shark_search" in state_dict:
-                joined_state["property_shark_ownership_data"] = state_dict[
-                    "property_shark_search"
-                ].get("property_shark_ownership_data")
-
-            # Combine errors from all branches
-            all_errors = []
-            for branch_name, branch_state in state_dict.items():
-                if branch_state.get("errors"):
-                    all_errors.extend(branch_state["errors"])
-            joined_state["errors"] = all_errors
-
-            # Set current step
-            joined_state["current_step"] = "Initial data collection completed"
-            joined_state["next_steps"] = ["extract_owner_info"]
-
-            return joined_state
-
-        # Add edges
+        # Phase 1: Initial data collection
         self.workflow.add_edge(START, "initialize")
 
-        # Set up parallel branches for initial data collection
+        # Run data collection in parallel
         self.workflow.add_edge("initialize", "zola_search")
         self.workflow.add_edge("initialize", "acris_search")
         self.workflow.add_edge("initialize", "property_shark_search")
 
-        # ACRIS documents processing branch
+        # Process ACRIS documents when available
         self.workflow.add_conditional_edges(
-            "acris_search", self._has_documents, {True: "process_documents", False: None}
+            "acris_search",
+            lambda state: self._has_documents(state),
+            {True: "process_documents", False: "analyze_owner"},
         )
 
-        # Join parallel branches
-        self.workflow.add_parallel_branch_join(
-            ["zola_search", "acris_search", "process_documents", "property_shark_search"],
-            join_parallel_results,
-            "analyze_owner",
-        )
+        # Connect data sources to analyzer
+        self.workflow.add_edge("zola_search", "analyze_owner")
+        self.workflow.add_edge("property_shark_search", "analyze_owner")
+        self.workflow.add_edge("process_documents", "analyze_owner")
 
-        # After analysis, check if we need to search OpenCorporates
+        # Phase 2: LLC resolution and people search
         self.workflow.add_conditional_edges(
             "analyze_owner",
-            self._is_llc_owner,
+            lambda state: state.get("owner_type", "").lower() == "llc",
             {True: "search_opencorporates", False: "search_skipgenie"},
         )
 
-        # Connect OpenCorporates to SkipGenie
+        # Phase 3: People search and completion
         self.workflow.add_edge("search_opencorporates", "search_skipgenie")
-
-        # Connect SkipGenie to TruePeopleSearch
         self.workflow.add_edge("search_skipgenie", "search_true_people")
-
-        # Connect TruePeopleSearch to END
         self.workflow.add_edge("search_true_people", END)
 
     def _has_documents(self, state: PropertyResearchState) -> bool:
@@ -153,10 +108,6 @@ class PropertyResearchGraph:
             and len(acris_results["files"]) > 0
         )
 
-    def _is_llc_owner(self, state: PropertyResearchState) -> bool:
-        """Check if the owner is an LLC and needs OpenCorporates search."""
-        return state.get("owner_type", "").lower() == "llc"
-
     def compile(self):
         """Compile the workflow"""
         return self.workflow.compile()
@@ -166,7 +117,7 @@ class PropertyResearchGraph:
         app = self.compile()
 
         if state is None:
-            # Initialize the full PropertyResearchState from the input state
+            # Initialize the state with default values
             state = PropertyResearchState(
                 address=self.input_state["address"],
                 zola_owner_name=None,
@@ -178,8 +129,8 @@ class PropertyResearchGraph:
                 owner_name=None,
                 owner_type=None,
                 contact_number=None,
-                current_step="",
-                next_steps=[],
+                current_step="starting workflow",
+                next_steps=["initialize"],
                 errors=[],
             )
 
@@ -187,30 +138,28 @@ class PropertyResearchGraph:
         logger.info(f"Starting property research workflow for {state['address']}")
         result = app.invoke(state)
         logger.info("Property research workflow completed")
+
+        # Update the final state
+        result["current_step"] = "workflow completed"
+        result["next_steps"] = []
+
         return result
 
 
 def main():
-    """
-    Main function to run the property research workflow.
-
-    1. Gets the property address from user input
-    2. Creates and compiles the workflow graph
-    3. Saves a visualization of the workflow
-    4. Runs the workflow and returns the results
-    """
+    """Run the property research workflow."""
     # Get address from user input
     address = input("Enter property address to research: ")
     if not address:
         address = "798 LEXINGTON AVENUE, New York, NY"
         print(f"Using default address: {address}")
 
-    # Create and compile the graph
+    # Create and run the workflow
     graph = PropertyResearchGraph(address=address)
-    app = graph.compile()
 
     # Save workflow visualization
     try:
+        app = graph.compile()
         image = Image(app.get_graph().draw_mermaid_png())
         with open("workflow_diagram.png", "wb") as f:
             f.write(image.data)
@@ -221,13 +170,12 @@ def main():
     # Run the workflow
     result = graph.run()
 
-    # Print any errors encountered
+    # Print results
     if result["errors"]:
         print("\nErrors encountered during research:")
         for error in result["errors"]:
             print(f"- {error}")
 
-    # Print final ownership information
     print("\nFinal Ownership Information:")
     print(f"Owner Name: {result.get('owner_name', 'Unknown')}")
     print(f"Owner Type: {result.get('owner_type', 'Unknown')}")

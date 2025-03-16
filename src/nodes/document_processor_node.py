@@ -13,7 +13,7 @@ class DocumentProcessorNode:
         """Initialize the document processor node."""
         pass
 
-    def run(self, state: PropertyResearchState) -> PropertyResearchState:
+    def run(self, state: PropertyResearchState) -> dict:
         """Process any PDF documents found in ACRIS."""
         logger.info("📑 Processing property documents")
         print("📑 Processing property documents")
@@ -21,7 +21,6 @@ class DocumentProcessorNode:
         if not state.get("acris_property_records"):
             logger.info("No ACRIS records found, skipping document processing")
             return {
-                **state,
                 "current_step": "Document processing skipped (no ACRIS records)",
                 "next_steps": ["analyze_owner"],
             }
@@ -31,7 +30,6 @@ class DocumentProcessorNode:
             ownership_records = self._process_documents(state["acris_property_records"])
 
             return {
-                **state,
                 "property_ownership_records": ownership_records,
                 "current_step": "Document processing completed",
                 "next_steps": ["analyze_owner"],
@@ -41,8 +39,7 @@ class DocumentProcessorNode:
             logger.error(error_msg)
 
             return {
-                **state,
-                "errors": state["errors"] + [error_msg],
+                "errors": [error_msg],
                 "current_step": "Document processing failed",
                 "next_steps": ["analyze_owner"],
             }

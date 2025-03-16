@@ -12,7 +12,7 @@ class PropertySharkNode:
         """Initialize the PropertyShark node."""
         pass
 
-    def run(self, state: PropertyResearchState) -> PropertyResearchState:
+    def run(self, state: PropertyResearchState) -> dict:
         """Search PropertyShark for property ownership information."""
         logger.info(f"🦈 Searching PropertyShark for: {state['address']}")
         print(f"🦈 Searching PropertyShark for: {state['address']}")
@@ -21,7 +21,6 @@ class PropertySharkNode:
             property_shark_ownership_data = search_shark(state["address"])
 
             return {
-                **state,
                 "property_shark_ownership_data": property_shark_ownership_data,
                 "current_step": "PropertyShark search completed",
                 "next_steps": ["search_opencorporates"]
@@ -33,8 +32,7 @@ class PropertySharkNode:
             logger.error(error_msg)
 
             return {
-                **state,
-                "errors": state["errors"] + [error_msg],
+                "errors": [error_msg],  # Just return the new error, reducer will combine
                 "current_step": "PropertyShark search failed",
                 "next_steps": ["search_opencorporates"]
                 if state.get("owner_name")

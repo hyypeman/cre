@@ -12,7 +12,7 @@ class AcrisNode:
         """Initialize the ACRIS node."""
         pass
 
-    def run(self, state: PropertyResearchState) -> PropertyResearchState:
+    def run(self, state: PropertyResearchState) -> dict:
         """Search ACRIS for property documents and ownership information."""
         logger.info(f"📄 Searching ACRIS for: {state['address']}")
         print(f"📄 Searching ACRIS for: {state['address']}")
@@ -21,7 +21,6 @@ class AcrisNode:
             acris_property_records = search_acris(state["address"])
 
             return {
-                **state,
                 "acris_property_records": acris_property_records,
                 "current_step": "ACRIS search completed",
                 "next_steps": ["process_documents"],
@@ -31,8 +30,7 @@ class AcrisNode:
             logger.error(error_msg)
 
             return {
-                **state,
-                "errors": state["errors"] + [error_msg],
+                "errors": [error_msg],  # Just return the new error, reducer will combine
                 "current_step": "ACRIS search failed",
                 "next_steps": ["analyze_owner"],  # Skip document processing if ACRIS fails
             }
