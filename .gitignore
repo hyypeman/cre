@@ -35,4 +35,5 @@ ENV/
 .env
 
 documents/
-*.png 
+*.png
+results/ 
