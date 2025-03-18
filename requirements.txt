@@ -30,3 +30,4 @@ pathlib
 traceback2
 # Additional dependencies for opencorporates_scraper.py and property_shark_scraper.py
 email-validator>=2.0.0  # For email processing in property_shark_scraper.py
+faker
