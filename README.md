@@ -54,10 +54,14 @@ LANGCHAIN_API_KEY=your_langchain_api_key
 LANGCHAIN_TRACING_V2=true
 OPENAI_API_KEY=your_openai_api_key
 
-# Credentials for property shark
+# Credentials for propertyshark.com
 PROPERTY_SHARK_EMAIL=
 PROPERTY_SHARK_PASSWORD=
 PROPERTY_SHARK_IMAP_PASSWORD=
+
+# Credentials for skipgenie.com
+SKIP_EMAIL=
+SKIP_PASSWORD=
 ```
 
 ## Usage
