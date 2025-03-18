@@ -12,17 +12,16 @@ class ZolaNode:
         """Initialize the ZoLa node."""
         pass
 
-    def run(self, state: PropertyResearchState) -> PropertyResearchState:
+    def run(self, state: PropertyResearchState) -> dict:
         """Search ZoLa for property information."""
         logger.info(f"🏢 Searching ZoLa for: {state['address']}")
         print(f"🏢 Searching ZoLa for: {state['address']}")
 
         try:
-            zola_results = lookup_zola_owner(state["address"])
+            zola_owner = lookup_zola_owner(state["address"])
 
             return {
-                **state,
-                "zola_results": zola_results,
+                "zola_owner_name": zola_owner,
                 "current_step": "ZoLa search completed",
                 "next_steps": ["acris_search"],
             }
@@ -31,8 +30,7 @@ class ZolaNode:
             logger.error(error_msg)
 
             return {
-                **state,
-                "errors": state["errors"] + [error_msg],
+                "errors": [error_msg],  # Just return the new error, reducer will combine
                 "current_step": "ZoLa search failed",
                 "next_steps": ["acris_search"],  # Continue to next step even if this fails
             }
