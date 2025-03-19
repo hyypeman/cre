@@ -31,10 +31,16 @@ load_dotenv()
 
 class PropertyResearchGraph:
     def __init__(self, address=None):
+        """Initialize the property research graph.
+
+        Args:
+            address: Optional initial address to research
+        """
         self.address = address
-        self.input_state = InputState(address=address)
+        self.input_state = InputState(address=address) if address else None
         self._init_nodes()
         self._build_workflow()
+        self.compiled_app = None
 
     def _init_nodes(self):
         """Initialize all workflow nodes"""
@@ -109,30 +115,75 @@ class PropertyResearchGraph:
         )
 
     def compile(self):
-        """Compile the workflow"""
-        return self.workflow.compile()
+        """Compile the workflow and cache the compiled app.
 
-    def run(self, state=None):
-        """Run the workflow with the given state or the initialized input state"""
+        Returns:
+            The compiled workflow app
+        """
+        if self.compiled_app is None:
+            logger.info("Compiling property research workflow")
+            self.compiled_app = self.workflow.compile()
+        return self.compiled_app
+
+    def set_address(self, address):
+        """Set a new address for research without recompiling the graph.
+
+        Args:
+            address: The property address to research
+
+        Returns:
+            self: For method chaining
+        """
+        self.address = address
+        self.input_state = InputState(address=address)
+        return self
+
+    def create_initial_state(self):
+        """Create an initial state for the workflow based on the current address.
+
+        Returns:
+            PropertyResearchState: The initial state for the workflow
+        """
+        if not self.address:
+            raise ValueError("Address must be set before creating initial state")
+
+        return PropertyResearchState(
+            address=self.address,
+            zola_owner_name=None,
+            acris_property_records=None,
+            property_ownership_records=None,
+            property_shark_ownership_data=None,
+            company_registry_data=None,
+            person_search_results=None,
+            owner_name=None,
+            owner_type=None,
+            contact_number=None,
+            current_step="starting workflow",
+            next_steps=["initialize"],
+            errors=[],
+        )
+
+    def run(self, address=None):
+        """Run the workflow with the given address or the current address.
+
+        Args:
+            address: Optional new address to research (will update the current address)
+
+        Returns:
+            The final state after workflow completion
+        """
+        # Update address if provided
+        if address:
+            self.set_address(address)
+
+        if not self.address:
+            raise ValueError("Address must be set before running the workflow")
+
+        # Ensure the workflow is compiled
         app = self.compile()
 
-        if state is None:
-            # Initialize the state with default values
-            state = PropertyResearchState(
-                address=self.input_state["address"],
-                zola_owner_name=None,
-                acris_property_records=None,
-                property_ownership_records=None,
-                property_shark_ownership_data=None,
-                company_registry_data=None,
-                person_search_results=None,
-                owner_name=None,
-                owner_type=None,
-                contact_number=None,
-                current_step="starting workflow",
-                next_steps=["initialize"],
-                errors=[],
-            )
+        # Create initial state
+        state = self.create_initial_state()
 
         # Run the graph
         logger.info(f"Starting property research workflow for {state['address']}")
@@ -145,44 +196,76 @@ class PropertyResearchGraph:
 
         return result
 
+    def visualize(self, output_path="workflow_diagram.png"):
+        """Generate and save a visualization of the workflow.
+
+        Args:
+            output_path: Path to save the visualization image
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            app = self.compile()
+            image = Image(app.get_graph().draw_mermaid_png())
+            with open(output_path, "wb") as f:
+                f.write(image.data)
+            logger.info(f"Workflow diagram saved as {output_path}")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not save workflow diagram: {e}")
+            return False
+
 
 def main():
     """Run the property research workflow."""
-    # Get address from user input
-    address = input("Enter property address to research: ")
-    if not address:
-        address = "798 LEXINGTON AVENUE, New York, NY"
-        print(f"Using default address: {address}")
+    # Create the workflow graph (without an initial address)
+    graph = PropertyResearchGraph()
 
-    # Create and run the workflow
-    graph = PropertyResearchGraph(address=address)
+    # Compile the graph once
+    graph.compile()
 
     # Save workflow visualization
-    try:
-        app = graph.compile()
-        image = Image(app.get_graph().draw_mermaid_png())
-        with open("workflow_diagram.png", "wb") as f:
-            f.write(image.data)
-        print("Workflow diagram saved as workflow_diagram.png")
-    except Exception as e:
-        logger.warning(f"Could not save workflow diagram: {e}")
+    graph.visualize()
 
-    # Run the workflow
-    result = graph.run()
+    # Process multiple addresses
+    addresses = []
 
-    # Print results
-    if result["errors"]:
-        print("\nErrors encountered during research:")
-        for error in result["errors"]:
-            print(f"- {error}")
+    # Get addresses from user input
+    while True:
+        address = input("Enter property address to research (or 'done' to finish): ")
+        if address.lower() == "done":
+            break
+        if not address:
+            continue
+        addresses.append(address)
 
-    print("\nFinal Ownership Information:")
-    print(f"Owner Name: {result.get('owner_name', 'Unknown')}")
-    print(f"Owner Type: {result.get('owner_type', 'Unknown')}")
-    print(f"Contact Number: {result.get('contact_number', 'Not available')}")
-    print(f"Address: {result.get('address', 'Unknown')}")
+    # Use default address if none provided
+    if not addresses:
+        addresses = ["798 LEXINGTON AVENUE, New York, NY"]
+        print(f"Using default address: {addresses[0]}")
 
-    return result
+    # Process each address using the same compiled graph
+    results = []
+    for address in addresses:
+        print(f"\nResearching address: {address}")
+        result = graph.run(address)
+        results.append(result)
+
+        # Print results
+        if result["errors"]:
+            print("\nErrors encountered during research:")
+            for error in result["errors"]:
+                print(f"- {error}")
+
+        print("\nOwnership Information:")
+        print(f"Owner Name: {result.get('owner_name', 'Unknown')}")
+        print(f"Owner Type: {result.get('owner_type', 'Unknown')}")
+        print(f"Contact Number: {result.get('contact_number', 'Not available')}")
+        print(f"Address: {result.get('address', 'Unknown')}")
+
+    print(f"\nProcessed {len(results)} addresses")
+    return results
 
 
 if __name__ == "__main__":
