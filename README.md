@@ -1,152 +1,159 @@
-# Property Ownership Research Tool
+# Property Research API
 
-An automated tool for researching property ownership information using public databases and business registries.
-
-## Overview
-
-This tool automates the process of researching property ownership by:
-
-1. Searching NYC's ZoLa (Zoning & Land Use) database for property information
-2. Searching ACRIS (Automated City Register Information System) for property documents
-3. Extracting information from property documents (deeds, mortgages, etc.)
-4. Searching PropertyShark for additional property ownership information
-5. For LLC owners, searching OpenCorporates for company information
-6. Analyzing all collected data to generate a comprehensive ownership report
+A FastAPI application that serves a LangGraph-based property research workflow as a REST API.
 
 ## Features
 
-- **ZoLa Integration**: Automatically searches ZoLa and extracts ownership information
-- **ACRIS Integration**: Searches ACRIS for property documents and ownership history
-- **Document Processing**: Extracts text and entities from property documents
-- **PropertyShark Integration**: Searches PropertyShark for additional ownership information
-- **OpenCorporates Integration**: Searches OpenCorporates for company information when owners are LLCs
-- **LangGraph Workflow**: Uses LangGraph to orchestrate the research process
-- **AI Analysis**: Uses GPT-4o to analyze collected data and generate comprehensive reports
+- REST API for property research
+- Asynchronous processing of multiple addresses
+- Job tracking with unique IDs
+- Optional MongoDB persistence
+- Docker and Docker Compose support
+- CORS configuration
+- Environment variable configuration
 
-## Workflow
+## Requirements
 
-The tool follows this workflow:
+- Python 3.11+
+- Docker and Docker Compose (for containerized deployment)
+- MongoDB (optional, for persistence)
 
-1. **User Input**: Address is provided.
-2. **Initial Scraping**:
-   - ZoLa runs independently.
-   - ACRIS runs first, then Document Processor (which uses ACRIS data).
-3. **Conditional Check** (LLM-based):
-   - If ZoLa + ACRIS (with Document Processor) find a name or LLC, proceed.
-   - If not, call PropertyShark.
-4. **LLC Handling**:
-   - If an LLC is found, scrape OpenCorporates to extract a name.
-   - Otherwise, proceed to search the name.
-5. **Name Search**:
-   - Look up the extracted name in SkipGenie, TruePeopleSearch, and possibly ZoomInfo (future implementation).
-6. **Output**: Generate a spreadsheet with the results.
+## Installation
 
-## Setup
+### Local Development
 
-1. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd property-research-api
+   ```
+
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Run the application:
+   ```bash
+   uvicorn application:app --reload
+   ```
+
+5. Access the API documentation at http://localhost:8000/docs
+
+### Docker Deployment
+
+1. Build and run using Docker Compose:
+   ```bash
+   docker-compose up -d
+   ```
+
+2. Access the API documentation at http://localhost:8000/docs
+
+## API Endpoints
+
+### Start Property Research
+
+```
+POST /api/research
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
+Request body:
+```json
+{
+  "addresses": [
+    "123 Main St, New York, NY",
+    "456 Park Ave, New York, NY"
+  ]
+}
 ```
 
-3. Install Playwright browsers:
-```bash
-playwright install chromium
-playwright install firefox
+Response:
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "created_at": "2023-04-01T12:00:00.000Z",
+  "updated_at": "2023-04-01T12:00:00.000Z",
+  "total_addresses": 2,
+  "completed_addresses": 0,
+  "results": [
+    {
+      "address": "123 Main St, New York, NY",
+      "owner_name": null,
+      "owner_type": null,
+      "contact_number": null,
+      "confidence": null,
+      "errors": [],
+      "completed": false
+    },
+    {
+      "address": "456 Park Ave, New York, NY",
+      "owner_name": null,
+      "owner_type": null,
+      "contact_number": null,
+      "confidence": null,
+      "errors": [],
+      "completed": false
+    }
+  ]
+}
 ```
 
-4. Set up environment variables by creating a `.env` file:
+### Get Job Status
+
 ```
-# Capsolver API key for reCAPTCHA solving
-CAPSOLVER_API_KEY=your_capsolver_api_key
-
-# Optional settings
-HEADLESS=false  # Set to true to run browser in headless mode
-TIMEOUT=30000  # Timeout in milliseconds for page operations
-
-# API keys for LangChain and OpenAI
-LANGCHAIN_API_KEY=your_langchain_api_key
-LANGCHAIN_TRACING_V2=true
-OPENAI_API_KEY=your_openai_api_key
-
-# Credentials for PropertyShark
-PROPERTY_SHARK_EMAIL=your_email
-PROPERTY_SHARK_PASSWORD=your_password
-PROPERTY_SHARK_IMAP_PASSWORD=your_imap_password
-
-# Credentials for OpenCorporates
-OPENCORPORATES_USERNAME=your_username
-OPENCORPORATES_PASSWORD=your_password
+GET /api/research/{job_id}
 ```
 
-## Usage
+Response: Same as above, but with updated status and results.
 
-Run the main script and enter a property address:
+### Health Check
 
-```bash
-python src/main.py
+```
+GET /api/health
 ```
 
-Example input:
+Response:
+```json
+{
+  "status": "healthy",
+  "timestamp": "2023-04-01T12:00:00.000Z",
+  "mongodb_connected": true
+}
 ```
-Enter property address to research: 798 LEXINGTON AVENUE, New York, NY
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MONGODB_URL` | MongoDB connection URL | "" |
+| `ENABLE_MONGODB` | Enable MongoDB persistence | "false" |
+| `CORS_ORIGINS` | Comma-separated list of allowed origins | "*" |
+| `PROCESSING_DELAY` | Delay between processing addresses (seconds) | 0.5 |
+| `MAX_ADDRESSES` | Maximum number of addresses per request | 10 |
+
+## Development
+
+### Project Structure
+
 ```
-
-The tool will:
-1. Search ZoLa for property information
-2. Search ACRIS for property documents
-3. Process any documents found
-4. Search PropertyShark for additional ownership information if needed
-5. Search OpenCorporates for company information if the owner is an LLC
-6. Generate a comprehensive ownership report
-
-## Components
-
-- **main.py**: Main entry point and LangGraph workflow
-- **nodes/**: Node modules for the LangGraph workflow
-  - **initializer_node.py**: Initializes the research process
-  - **zola_node.py**: Searches ZoLa for property information
-  - **acris_node.py**: Searches ACRIS for property documents
-  - **document_processor_node.py**: Processes property documents
-  - **property_shark_node.py**: Searches PropertyShark for ownership information
-  - **opencorporates_node.py**: Searches OpenCorporates for company information
-  - **analyzer_node.py**: Analyzes collected data and generates reports
-- **scrapers/**: Modules for scraping data from various sources
-  - **zola_scraper.py**: Module for searching ZoLa
-  - **acris_scraper.py**: Module for searching ACRIS
-  - **document_processor.py**: Module for processing property documents
-  - **property_shark_scraper.py**: Module for searching PropertyShark
-  - **opencorporates_scraper.py**: Module for searching OpenCorporates
-
-## Example Research Scenarios
-
-### Scenario 1: 798 Lexington Ave, Manhattan
-
-Goal: Identify the owner of the property at 798 Lexington Ave, Manhattan.
-
-Steps:
-1. Search ZoLa to find basic ownership information
-2. Search ACRIS to find deed records and ownership history
-3. Process documents to extract detailed ownership information
-4. If owner is an LLC, search OpenCorporates for company information
-5. Generate a comprehensive ownership report
-
-### Scenario 2: 28 W 23rd Street, New York
-
-Goal: Identify the owner of 28 W 23rd Street and retrieve their contact information.
-
-Steps:
-1. Search ZoLa to find that the owner is Joseph Rosen Trust
-2. Search ACRIS to find that Jonathan P. Rosen is listed as Party One
-3. Process documents to confirm 40 E 69th Street as his address
-4. Search PropertyShark for additional ownership information
-5. Generate a comprehensive ownership report
+property-research-api/
+├── application.py        # FastAPI application
+├── src/                  # Property research implementation
+│   ├── main.py           # LangGraph workflow
+│   ├── state.py          # State definitions
+│   └── nodes/            # Workflow nodes
+├── Dockerfile            # Docker configuration
+├── docker-compose.yml    # Docker Compose configuration
+└── requirements.txt      # Python dependencies
+```
 
 ## License
 
-MIT License
+[MIT License](LICENSE)
