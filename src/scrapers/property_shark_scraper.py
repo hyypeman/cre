@@ -1,4 +1,5 @@
 import re
+import json
 
 from playwright.sync_api import sync_playwright, Page
 import time
@@ -15,6 +16,38 @@ load_dotenv()
 IMAP_SERVER = "imap.gmail.com"
 SUBJECT_FILTER = "Your security code"
 WAIT_TIME = 120  # 2 minutes (in seconds)
+
+# Path for storing browser state
+AUTH_FILE = os.path.join(os.path.expanduser("~"), ".opencorporates_firefox_auth.json")
+
+def get_browser_context(playwright, headless=False):
+    """Create or reuse a browser context with stored auth state using Firefox"""
+    # Launch Firefox browser instead of Chromium
+    browser = playwright.firefox.launch(
+        headless=headless,
+        args=[
+            "--disable-debugging-pane",  # Disable the debugging pane for a cleaner UI.
+            "--disable-automation",  # Disable automation flags to reduce detection.
+        ],
+    )
+
+    # Create a context - either new or with stored auth state
+    if os.path.exists(AUTH_FILE):
+        # Load stored auth state
+        try:
+            with open(AUTH_FILE, "r") as f:
+                storage_state = json.load(f)
+
+            context = browser.new_context(storage_state=storage_state)
+            print("Using stored authentication state")
+        except Exception as e:
+            print(f"Error loading auth state: {e}")
+            context = browser.new_context()
+    else:
+        # No stored auth state
+        context = browser.new_context()
+
+    return browser, context
 
 
 def get_security_code():
@@ -67,10 +100,20 @@ def login(page: Page):
     # Define the URLs for login and profile pages.
     login_url = "https://www.propertyshark.com/mason/Accounts/logon.html"
     profile_url = "https://www.propertyshark.com/mason/Accounts/My/"
+    search_url = "https://www.propertyshark.com/"
 
     try:
+        # First, go to search page and check if we are logged in
         page.context.set_default_timeout(60000)
+        page.goto(search_url, timeout=60000)
+        page.wait_for_load_state()
+        time.sleep(5)
+        
+        if is_logged_in(page):
+            # We are logged in already, we can skip login process
+            return True
 
+        # We are not logged in => log in process required
         page.goto(login_url, timeout=60000)
         page.wait_for_load_state()
         time.sleep(5)
@@ -132,8 +175,14 @@ def login(page: Page):
         time.sleep(5)
 
         # Confirm login success by checking for the presence of "My Account" text.
-        if "My Account" in page.content():
+        if is_logged_in(page):
             print("Login success")
+            
+            # Store authentication state
+            storage_state = page.context.storage_state()
+            with open(AUTH_FILE, "w") as f:
+                json.dump(storage_state, f)
+            
             return True
 
     except Exception:
@@ -163,10 +212,12 @@ def search(address: str, page: Page):
     search_url = "https://www.propertyshark.com/"
 
     try:
-        page.context.set_default_timeout(60000)
-        page.goto(search_url, timeout=60000)
-        page.wait_for_load_state()
-        time.sleep(5)
+        # Open search page if it's not opened (if we just logged in)
+        if page.url != search_url:
+            page.context.set_default_timeout(60000)
+            page.goto(search_url, timeout=60000)
+            page.wait_for_load_state()
+            time.sleep(5)
 
         # Locate the search field for the address using its XPath.
         search_xpath = '//*[@id="search_token_address"]'
@@ -307,6 +358,13 @@ def parse_details(page: Page) -> dict:
     return {}
 
 
+def is_logged_in(page):
+    # Confirm login success by checking for the presence of "My Account" text.
+    if "My Account" in page.content():
+        return True
+    return False
+
+
 def search_shark(address: str) -> dict:
     """
     Searches the NYC ACRIS database for property information using the SHARK system.
@@ -330,13 +388,7 @@ def search_shark(address: str) -> dict:
 
     # Initialize Playwright and launch a Firefox browser instance.
     with sync_playwright() as p:
-        browser = p.firefox.launch(
-            headless=headless,
-            args=[
-                "--disable-debugging-pane",  # Disable the debugging pane for a cleaner UI.
-                "--disable-automation",  # Disable automation flags to reduce detection.
-            ],
-        )
+        browser, context = get_browser_context(p, headless=headless)
 
         try:
             # Create a new browser context and open a new page.
