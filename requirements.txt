@@ -14,10 +14,10 @@ tenacity==8.3.0
 typing_extensions==4.12.2
 urllib3==2.3.0
 webdriver-manager==4.0.1
-langgraph
-langchain-core
-langchain-community
-langchain-openai
+langgraph>=0.0.25
+langchain-core>=0.1.27
+langchain-community>=0.0.19
+langchain-openai>=0.0.5
 bs4
 imapclient
 beautifulsoup4==4.12.3
@@ -33,7 +33,18 @@ email-validator>=2.0.0  # For email processing in property_shark_scraper.py
 # Dependencies for analyzer_node.py
 pandas>=2.0.0  # For spreadsheet handling
 openpyxl>=3.1.2  # For Excel file support with pandas
-pydantic>=1.10.8  # For structured output models
+pydantic>=2.0.0  # For structured output models
 # Dependencies for truepeoplesearch_scraper.py
 nodriver==0.39
 capsolver==1.0.7
+
+# FastAPI application dependencies
+fastapi>=0.104.0
+uvicorn>=0.23.2
+motor>=3.3.1  # MongoDB async driver
+pymongo>=4.5.0  # MongoDB sync driver
+python-multipart>=0.0.6  # For form data handling
+httpx>=0.25.0  # For async HTTP requests
+asyncio>=3.4.3  # For asynchronous programming
+uuid>=1.30  # For generating unique identifiers
+starlette>=0.27.0  # FastAPI dependency
