@@ -99,26 +99,42 @@ def login(page: Page):
 
         # Check if a security code is required (i.e., two-factor authentication).
         if "PropertyShark Account Security" in page.content():
-            print("Need get code from email")
-            code = get_security_code()
-            if not code:
-                print("Not find code in email")
-                return False
+            # Maximum number of attempts to verify the security code.
+            max_attempts = 2
+            attempt = 0
 
-            print("Find code -> %s" % code)
-            code_xpath = "//input[@name='security_code']"
-            page.query_selector(code_xpath).fill(code)
+            while attempt < max_attempts:
+                attempt += 1
+                print(f"Attempt {attempt}: Getting verification code from email")
 
-            # Re-submit the form after entering the security code.
-            submit_xpath = '//*[@id="sbo"]'
-            if page.is_visible(submit_xpath):
-                page.click(submit_xpath)
-                time.sleep(5)
-
-                # Verify if the entered security code is invalid.
-                if "Invalid security code" in page.content():
-                    print("Invalid security code")
+                code = get_security_code()
+                if not code:
+                    print("Could not find code in email")
                     return False
+
+                print(f"Found code -> {code}")
+
+                # Fill in the security code input field.
+                code_xpath = "//input[@name='security_code']"
+                page.query_selector(code_xpath).fill(code)
+
+                # Re-submit the form after entering the security code.
+                submit_xpath = '//*[@id="sbo"]'
+                if page.is_visible(submit_xpath):
+                    page.click(submit_xpath)
+                    time.sleep(5)
+
+                    # Verify if the entered security code is invalid.
+                    if "Invalid security code" in page.content():
+                        print("Invalid security code, retrying...")
+                        continue  # Loop to try again
+                    else:
+                        print("Security code accepted")
+                        break  # Exit the loop if code is accepted
+            else:
+                # If we exit the loop normally, it means all attempts failed.
+                print("Failed to verify security code after multiple attempts")
+                return False
 
         # Dismiss any pop-up that might appear (e.g., a "No Thanks" offer).
         pop_xpath = '//a[text()="No Thanks"]'
