@@ -177,6 +177,12 @@ OPENAI_API_KEY=your_openai_api_key
 TAVILY_API_KEY=your_tavily_api_key
 REDUCTO_API_KEY=your_reducto_api_key
 
+# Credentials for skipgenie.com
+SKIP_EMAIL=your_email
+SKIP_PASSWORD=your_password
+
+# Credentials for PropertyShark
+=======
 # CAPTCHA Solving
 CAPSOLVER_API_KEY=your_capsolver_api_key
 
