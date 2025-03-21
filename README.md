@@ -1,156 +1,308 @@
-# Property Ownership Research Tool
-
-An automated tool for researching property ownership information using public databases and business registries.
+# Property Research System
 
 ## Overview
 
-This tool automates the process of researching property ownership by:
-
-1. Searching NYC's ZoLa (Zoning & Land Use) database for property information
-2. Searching ACRIS (Automated City Register Information System) for property documents
-3. Extracting information from property documents (deeds, mortgages, etc.)
-4. Searching PropertyShark for additional property ownership information
-5. For LLC owners, searching OpenCorporates for company information
-6. Analyzing all collected data to generate a comprehensive ownership report
+The Property Research System is an automated tool that aggregates property ownership information from multiple data sources. It uses a graph-based workflow to fetch, analyze, and consolidate property data, providing comprehensive ownership details for real estate properties.
 
 ## Features
 
-- **ZoLa Integration**: Automatically searches ZoLa and extracts ownership information
-- **ACRIS Integration**: Searches ACRIS for property documents and ownership history
-- **Document Processing**: Extracts text and entities from property documents
-- **PropertyShark Integration**: Searches PropertyShark for additional ownership information
-- **OpenCorporates Integration**: Searches OpenCorporates for company information when owners are LLCs
-- **LangGraph Workflow**: Uses LangGraph to orchestrate the research process
-- **AI Analysis**: Uses GPT-4o to analyze collected data and generate comprehensive reports
+- **Multi-source Data Collection**: Integrates with Zola, ACRIS, PropertyShark, and other data sources
+- **Automated Document Processing**: Extracts ownership information from property documents
+- **Entity Resolution**: Identifies owner types (individual vs. LLC) and resolves LLC ownership
+- **REST API**: Provides endpoints for property research requests and status tracking
+- **Asynchronous Processing**: Handles multiple property research requests in parallel
+- **Persistent Storage**: Optionally stores results in MongoDB for future reference
 
-## Workflow
+## Project Structure
 
-The tool follows this workflow:
-
-1. **User Input**: Address is provided.
-2. **Initial Scraping**:
-   - ZoLa runs independently.
-   - ACRIS runs first, then Document Processor (which uses ACRIS data).
-3. **Conditional Check** (LLM-based):
-   - If ZoLa + ACRIS (with Document Processor) find a name or LLC, proceed.
-   - If not, call PropertyShark.
-4. **LLC Handling**:
-   - If an LLC is found, scrape OpenCorporates to extract a name.
-   - Otherwise, proceed to search the name.
-5. **Name Search**:
-   - Look up the extracted name in SkipGenie, TruePeopleSearch, and possibly ZoomInfo (future implementation).
-6. **Output**: Generate a spreadsheet with the results.
-
-## Setup
-
-1. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+cre/
+├── application.py            # FastAPI application server
+├── run.py                    # Script to run the application directly
+├── requirements.txt          # Python package dependencies
+├── Dockerfile                # Container configuration
+├── docker-compose.yml        # Multi-container deployment setup
+├── api_documentation.md      # Detailed API documentation
+├── .env                      # Environment variables configuration
+├── .env.example              # Template for environment variables
+├── src/                      # Core application code
+│   ├── main.py               # Main workflow graph implementation
+│   ├── state.py              # State management for the workflow
+│   ├── nodes/                # Workflow nodes that perform specific tasks
+│   │   ├── __init__.py       # Node exports
+│   │   ├── acris_node.py     # ACRIS property records integration
+│   │   ├── analyzer_node.py  # Data analysis and entity resolution
+│   │   ├── document_processor_node.py  # Document text extraction
+│   │   ├── initializer_node.py  # Workflow initialization
+│   │   ├── opencorporates_node.py  # Company data integration
+│   │   ├── property_shark_node.py  # PropertyShark integration
+│   │   ├── skipgenie_node.py  # SkipGenie people search
+│   │   ├── true_people_search_node.py  # TruePeopleSearch integration
+│   │   └── zola_node.py      # NYC Planning Zola integration
+│   ├── scrapers/             # Web scraping implementations
+│   │   ├── __init__.py       # Scraper exports
+│   │   ├── acris_scraper.py  # ACRIS document retrieval
+│   │   ├── document_processor.py  # Document text extraction
+│   │   ├── opencorporates_scraper.py  # Company data scraping
+│   │   ├── property_shark_scraper.py  # PropertyShark data scraping
+│   │   └── zola_scraper.py   # NYC Zola data scraping
+│   └── __init__.py           # Package exports
+├── documents/                # Documents storage directory
+├── results/                  # Results output directory
+└── workflow_diagram.png      # Visual representation of the workflow
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- MongoDB (optional, for result persistence)
+- API keys for external services (see Environment Variables section)
+- Git
+
+### Local Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd cre
+   ```
+
+2. **Create and activate a virtual environment**
+   ```bash
+   python -m venv venv
+   # On Windows
+   venv\Scripts\activate
+   # On macOS/Linux
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set up environment variables**
+   Create a `.env` file in the root directory with the necessary environment variables (see the Environment Variables section below).
+
+5. **Start the API server**
+   ```bash
+   uvicorn application:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+6. **Access the API documentation**
+   Open your browser and navigate to [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Using Docker
+
+1. **Build and start the Docker containers**
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Access the API**
+   The API will be available at [http://localhost:8000](http://localhost:8000)
+
+## Deployment on Heroku
+
+### Prerequisites
+- Heroku CLI installed
+- Heroku account
+- Git
+
+### Steps to Deploy
+
+1. **Login to Heroku**
+   ```bash
+   heroku login
+   ```
+
+2. **Create a new Heroku app**
+   ```bash
+   heroku create your-app-name
+   ```
+
+3. **Set up MongoDB add-on**
+   ```bash
+   heroku addons:create mongolab:sandbox
+   ```
+
+4. **Configure environment variables**
+   ```bash
+   heroku config:set ENABLE_MONGODB=true
+   heroku config:set PROCESSING_DELAY=0.5
+   heroku config:set MAX_ADDRESSES=10
+   heroku config:set CORS_ORIGINS=*
+   # Add all other environment variables (see below)
+   ```
+
+5. **Deploy the application**
+   ```bash
+   git push heroku main
+   ```
+
+6. **Scale the dynos**
+   ```bash
+   heroku ps:scale web=1
+   ```
+
+7. **Open the application**
+   ```bash
+   heroku open
+   ```
+
+## Environment Variables
+
+Create a `.env` file in the project root with the following variables:
+
+### Core Configuration
+```
+# MongoDB Configuration (Optional)
+MONGODB_URL=mongodb://localhost:27017/
+ENABLE_MONGODB=false
+
+# API Configuration
+PROCESSING_DELAY=0.5  # Delay between addresses in seconds
+MAX_ADDRESSES=10  # Maximum number of addresses per request
+CORS_ORIGINS=*  # Comma-separated list of allowed origins for CORS
 ```
 
-3. Install Playwright browsers:
-```bash
-playwright install chromium
-playwright install firefox
+### API Keys for External Services
 ```
-
-4. Set up environment variables by creating a `.env` file:
-```
-# Capsolver API key for reCAPTCHA solving
-CAPSOLVER_API_KEY=your_capsolver_api_key
-
-# Optional settings
-HEADLESS=false  # Set to true to run browser in headless mode
-TIMEOUT=30000  # Timeout in milliseconds for page operations
-
-# API keys for LangChain and OpenAI
+# LangChain and OpenAI Configuration
 LANGCHAIN_API_KEY=your_langchain_api_key
 LANGCHAIN_TRACING_V2=true
 OPENAI_API_KEY=your_openai_api_key
+TAVILY_API_KEY=your_tavily_api_key
+REDUCTO_API_KEY=your_reducto_api_key
 
 # Credentials for skipgenie.com
 SKIP_EMAIL=your_email
 SKIP_PASSWORD=your_password
 
 # Credentials for PropertyShark
+=======
+# CAPTCHA Solving
+CAPSOLVER_API_KEY=your_capsolver_api_key
+
+# Browser Automation
+HEADLESS=false  # Set to true to run browser in headless mode
+TIMEOUT=30000   # Browser timeout in milliseconds
+
+# PropertyShark Credentials
 PROPERTY_SHARK_EMAIL=your_email
 PROPERTY_SHARK_PASSWORD=your_password
 PROPERTY_SHARK_IMAP_PASSWORD=your_imap_password
 
-# Credentials for OpenCorporates
+# OpenCorporates Credentials
 OPENCORPORATES_USERNAME=your_username
 OPENCORPORATES_PASSWORD=your_password
 ```
 
-## Usage
+## API Usage
 
-Run the main script and enter a property address:
+### Start Property Research
 
-```bash
-python src/main.py
+**Endpoint**: `POST /api/research`
+
+**Request Body**:
+```json
+{
+  "addresses": [
+    "123 Main St, New York, NY 10001",
+    "456 Park Ave, New York, NY 10022"
+  ]
+}
 ```
 
-Example input:
+**Response**:
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "created_at": "2023-09-25T14:30:45.123Z",
+  "updated_at": "2023-09-25T14:30:45.123Z",
+  "total_addresses": 2,
+  "completed_addresses": 0,
+  "results": []
+}
 ```
-Enter property address to research: 798 LEXINGTON AVENUE, New York, NY
+
+### Check Job Status
+
+**Endpoint**: `GET /api/research/{job_id}`
+
+**Response**:
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "created_at": "2023-09-25T14:30:45.123Z",
+  "updated_at": "2023-09-25T14:35:12.456Z",
+  "total_addresses": 2,
+  "completed_addresses": 2,
+  "results": [
+    {
+      "address": "123 Main St, New York, NY 10001",
+      "owner_name": "John Doe",
+      "owner_type": "individual",
+      "contact_number": "212-555-1234",
+      "confidence": "high",
+      "errors": [],
+      "completed": true
+    },
+    {
+      "address": "456 Park Ave, New York, NY 10022",
+      "owner_name": "Acme Properties LLC",
+      "owner_type": "llc",
+      "contact_number": "212-555-5678",
+      "confidence": "medium",
+      "errors": [],
+      "completed": true
+    }
+  ]
+}
 ```
 
-The tool will:
-1. Search ZoLa for property information
-2. Search ACRIS for property documents
-3. Process any documents found
-4. Search PropertyShark for additional ownership information if needed
-5. Search OpenCorporates for company information if the owner is an LLC
-6. Generate a comprehensive ownership report
+### Health Check
 
-## Components
+**Endpoint**: `GET /api/health`
 
-- **main.py**: Main entry point and LangGraph workflow
-- **nodes/**: Node modules for the LangGraph workflow
-  - **initializer_node.py**: Initializes the research process
-  - **zola_node.py**: Searches ZoLa for property information
-  - **acris_node.py**: Searches ACRIS for property documents
-  - **document_processor_node.py**: Processes property documents
-  - **property_shark_node.py**: Searches PropertyShark for ownership information
-  - **opencorporates_node.py**: Searches OpenCorporates for company information
-  - **analyzer_node.py**: Analyzes collected data and generates reports
-- **scrapers/**: Modules for scraping data from various sources
-  - **zola_scraper.py**: Module for searching ZoLa
-  - **acris_scraper.py**: Module for searching ACRIS
-  - **document_processor.py**: Module for processing property documents
-  - **property_shark_scraper.py**: Module for searching PropertyShark
-  - **opencorporates_scraper.py**: Module for searching OpenCorporates
+**Response**:
+```json
+{
+  "status": "ok",
+  "timestamp": "2023-09-25T14:30:45.123Z"
+}
+```
 
-## Example Research Scenarios
+## Workflow Customization
 
-### Scenario 1: 798 Lexington Ave, Manhattan
+The property research workflow is implemented as a graph and can be customized by modifying the `PropertyResearchGraph` class in `src/main.py`.
 
-Goal: Identify the owner of the property at 798 Lexington Ave, Manhattan.
+## Troubleshooting
 
-Steps:
-1. Search ZoLa to find basic ownership information
-2. Search ACRIS to find deed records and ownership history
-3. Process documents to extract detailed ownership information
-4. If owner is an LLC, search OpenCorporates for company information
-5. Generate a comprehensive ownership report
+1. **MongoDB Connection Issues**
+   - Ensure MongoDB is running and accessible
+   - Check if the MongoDB URL is correctly configured
 
-### Scenario 2: 28 W 23rd Street, New York
+2. **API Key Errors**
+   - Verify all API keys are correctly set in the `.env` file
+   - Ensure API keys have the necessary permissions
 
-Goal: Identify the owner of 28 W 23rd Street and retrieve their contact information.
+3. **Browser Automation Issues**
+   - Set `HEADLESS=false` to see the browser in action for debugging
+   - Increase `TIMEOUT` value if operations are timing out
 
-Steps:
-1. Search ZoLa to find that the owner is Joseph Rosen Trust
-2. Search ACRIS to find that Jonathan P. Rosen is listed as Party One
-3. Process documents to confirm 40 E 69th Street as his address
-4. Search PropertyShark for additional ownership information
-5. Generate a comprehensive ownership report
+4. **Deployment Issues on Heroku**
+   - Check Heroku logs: `heroku logs --tail`
+   - Ensure all environment variables are correctly set
+
+## Contributing
+
+Contributions to the Property Research System are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT License
+This project is licensed under the [MIT License](LICENSE).

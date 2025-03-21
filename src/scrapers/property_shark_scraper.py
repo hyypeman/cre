@@ -1,3 +1,4 @@
+import json
 import re
 
 from playwright.sync_api import sync_playwright, Page
@@ -16,8 +17,26 @@ IMAP_SERVER = "imap.gmail.com"
 SUBJECT_FILTER = "Your security code"
 WAIT_TIME = 120  # 2 minutes (in seconds)
 
+# Path for storing browser state
+USER_DATA_DIR = os.path.join(os.path.expanduser("~"), ".property_shark_browser_data")
+AUTH_FILE = os.path.join(os.path.expanduser("~"), ".property_shark_auth.json")
+
+
+def extract_security_code(email_body: str) -> str | None:
+    """Extracts a 5-digit security code from an email body."""
+    match = re.search(r"\b\d{5}\b", email_body)
+    return match.group() if match else None
+
 
 def get_security_code():
+    """
+    Fetches the latest security code from the email inbox.
+    If no new code is found, retrieves the most recent matching email.
+
+    Returns:
+        str or None: The latest security code if found, otherwise None.
+    """
+
     with IMAPClient(IMAP_SERVER) as client:
         client.login(
             os.getenv("PROPERTY_SHARK_EMAIL", ""), os.getenv("PROPERTY_SHARK_IMAP_PASSWORD", "")
@@ -25,8 +44,10 @@ def get_security_code():
         client.select_folder("INBOX")
 
         start_time = time.time()
+
         while time.time() - start_time < WAIT_TIME:
             messages = client.search(["UNSEEN", "SUBJECT", SUBJECT_FILTER])
+            code = None
             if messages:
                 for msg_id in messages:
                     raw_message = client.fetch([msg_id], ["RFC822"])
@@ -41,13 +62,74 @@ def get_security_code():
                     else:
                         body = msg.get_payload(decode=True).decode()
 
-                    # Extract security code (assumes it's a 5-digit number)
-                    match = re.search(r"\b\d{5}\b", body)
-                    if match:
-                        return match.group()  # Return the security code
+                    code = extract_security_code(body)
+
+                if code:
+                    return code
             time.sleep(10)  # Wait 10 seconds before checking again
 
+        seen_messages = client.search(["SEEN", "SUBJECT", SUBJECT_FILTER])
+        if seen_messages:
+            for msg_id in reversed(seen_messages):
+                raw_message = client.fetch([msg_id], ["RFC822", "INTERNALDATE"])
+                msg = email.message_from_bytes(raw_message[msg_id][b"RFC822"], policy=default)
+
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            body = part.get_payload(decode=True).decode()
+                else:
+                    body = msg.get_payload(decode=True).decode()
+
+                code = extract_security_code(body)
+                if code:
+                    return code
+
         return None
+
+
+def is_logged(page: Page) -> bool:
+    """
+    Checks if the user is logged into PropertyShark by navigating to the profile page.
+
+    This function attempts to verify login status by accessing the "My Account" page.
+    If logged in, it stores the authentication state in a JSON file.
+
+    Args:
+        page (Page): The Playwright page instance.
+
+    Returns:
+        bool: True if logged in, False otherwise.
+
+    Best Practices:
+    - Avoid using fixed sleep times (`time.sleep(5)`) where possible. Instead, rely on Playwright’s built-in `wait_for_load_state()`.
+    - Store authentication data securely if handling sensitive credentials.
+    - Consider catching and handling potential exceptions during navigation.
+    """
+
+    profile_url = "https://www.propertyshark.com/mason/Accounts/My/"
+
+    try:
+        # Navigate to the profile page
+        page.goto(profile_url, timeout=60000)
+        page.wait_for_load_state()
+
+        # Verify login status by checking for "My Account" in page content
+        if "My Account" in page.content():
+            print("Login successful")
+
+            # Store authentication state
+            storage_state = page.context.storage_state()
+            with open(AUTH_FILE, "w") as f:
+                json.dump(storage_state, f)
+
+            return True
+
+    except Exception as e:
+        print(f"Error checking login status: {e}")
+
+    return False
 
 
 def login(page: Page):
@@ -66,10 +148,13 @@ def login(page: Page):
     """
     # Define the URLs for login and profile pages.
     login_url = "https://www.propertyshark.com/mason/Accounts/logon.html"
-    profile_url = "https://www.propertyshark.com/mason/Accounts/My/"
 
     try:
         page.context.set_default_timeout(60000)
+
+        if is_logged(page):
+            print('Logged by storage')
+            return True
 
         page.goto(login_url, timeout=60000)
         page.wait_for_load_state()
@@ -99,26 +184,42 @@ def login(page: Page):
 
         # Check if a security code is required (i.e., two-factor authentication).
         if "PropertyShark Account Security" in page.content():
-            print("Need get code from email")
-            code = get_security_code()
-            if not code:
-                print("Not find code in email")
-                return False
+            # Maximum number of attempts to verify the security code.
+            max_attempts = 2
+            attempt = 0
 
-            print("Find code -> %s" % code)
-            code_xpath = "//input[@name='security_code']"
-            page.query_selector(code_xpath).fill(code)
+            while attempt < max_attempts:
+                attempt += 1
+                print(f"Attempt {attempt}: Getting verification code from email")
 
-            # Re-submit the form after entering the security code.
-            submit_xpath = '//*[@id="sbo"]'
-            if page.is_visible(submit_xpath):
-                page.click(submit_xpath)
-                time.sleep(5)
-
-                # Verify if the entered security code is invalid.
-                if "Invalid security code" in page.content():
-                    print("Invalid security code")
+                code = get_security_code()
+                if not code:
+                    print("Could not find code in email")
                     return False
+
+                print(f"Found code -> {code}")
+
+                # Fill in the security code input field.
+                code_xpath = "//input[@name='security_code']"
+                page.query_selector(code_xpath).fill(code)
+
+                # Re-submit the form after entering the security code.
+                submit_xpath = '//*[@id="sbo"]'
+                if page.is_visible(submit_xpath):
+                    page.click(submit_xpath)
+                    time.sleep(5)
+
+                    # Verify if the entered security code is invalid.
+                    if "Invalid security code" in page.content():
+                        print("Invalid security code, retrying...")
+                        continue  # Loop to try again
+                    else:
+                        print("Security code accepted")
+                        break  # Exit the loop if code is accepted
+            else:
+                # If we exit the loop normally, it means all attempts failed.
+                print("Failed to verify security code after multiple attempts")
+                return False
 
         # Dismiss any pop-up that might appear (e.g., a "No Thanks" offer).
         pop_xpath = '//a[text()="No Thanks"]'
@@ -126,14 +227,7 @@ def login(page: Page):
             page.click(pop_xpath)
             time.sleep(1)
 
-        # Navigate to the profile page to verify that the login was successful.
-        page.goto(profile_url, timeout=60000)
-        page.wait_for_load_state()
-        time.sleep(5)
-
-        # Confirm login success by checking for the presence of "My Account" text.
-        if "My Account" in page.content():
-            print("Login success")
+        if is_logged(page):
             return True
 
     except Exception:
@@ -307,6 +401,35 @@ def parse_details(page: Page) -> dict:
     return {}
 
 
+def get_browser_context(playwright, headless=False):
+    """Create or reuse a browser context with stored auth state"""
+    if not os.path.exists(USER_DATA_DIR):
+        os.makedirs(USER_DATA_DIR)
+
+    # Launch browser with persistent context
+    browser = playwright.firefox.launch(
+        headless=headless, args=["--disable-debugging-pane", "--disable-automation"]
+    )
+
+    # Create a context - either new or with stored auth state
+    if os.path.exists(AUTH_FILE):
+        # Load stored auth state
+        try:
+            with open(AUTH_FILE, "r") as f:
+                storage_state = json.load(f)
+
+            context = browser.new_context(storage_state=storage_state)
+            print("Using stored authentication state")
+        except Exception as e:
+            print(f"Error loading auth state: {e}")
+            context = browser.new_context()
+    else:
+        # No stored auth state
+        context = browser.new_context()
+
+    return browser, context
+
+
 def search_shark(address: str) -> dict:
     """
     Searches the NYC ACRIS database for property information using the SHARK system.
@@ -330,19 +453,13 @@ def search_shark(address: str) -> dict:
 
     # Initialize Playwright and launch a Firefox browser instance.
     with sync_playwright() as p:
-        browser = p.firefox.launch(
-            headless=headless,
-            args=[
-                "--disable-debugging-pane",  # Disable the debugging pane for a cleaner UI.
-                "--disable-automation",  # Disable automation flags to reduce detection.
-            ],
-        )
+        browser, context = get_browser_context(p, headless=headless)
 
         try:
+            context.set_default_timeout(timeout)
             # Create a new browser context and open a new page.
-            context = browser.new_context()
             page = context.new_page()
-            # Set the default timeout for all actions on this page.
+            # Create a new browser context and open a new page.
             page.set_default_timeout(timeout)
 
             # Perform login; if it fails, log the error and return an empty dictionary.

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017/
+      - ENABLE_MONGODB=true
+      - CORS_ORIGINS=*
+      - PROCESSING_DELAY=0.5
+      - MAX_ADDRESSES=10
+    depends_on:
+      - mongodb
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:6.0
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  mongodb_data: 

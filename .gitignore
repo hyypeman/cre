@@ -37,3 +37,6 @@ ENV/
 documents/
 *.png
 results/ 
+
+.DS_Store
+.python-version
