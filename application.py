@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from motor.motor_asyncio import AsyncIOMotorClient
 from src.main import PropertyResearchGraph
+from twilio.rest import Client
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +25,8 @@ MONGODB_URL = os.getenv("MONGODB_URL", "")
 ENABLE_MONGODB = os.getenv("ENABLE_MONGODB", "false").lower() == "true"
 PROCESSING_DELAY = float(os.getenv("PROCESSING_DELAY", "0.5"))  # Delay between addresses in seconds
 MAX_ADDRESSES = int(os.getenv("MAX_ADDRESSES", "10"))  # Maximum number of addresses per request
+account_sid = os.environ["TWILIO_ACCOUNT_SID"]
+auth_token = os.environ["TWILIO_AUTH_TOKEN"]
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -240,6 +243,24 @@ async def health_check():
         "mongodb_connected": ENABLE_MONGODB and db is not None,
     }
 
+@app.get("/api/phone/verify/{phone_number}")
+async def verify_phone_number(phone_number: str):
+    """Verify a phone number."""
+    try:
+        client = Client(account_sid, auth_token)
+        lookup_result = client.lookups.v2.phone_numbers(phone_number).fetch()
+        
+        # Extract only the needed information instead of returning the whole object
+        result = {
+            "status": "success",
+            "phone_number": lookup_result.phone_number,
+            "country_code": lookup_result.country_code,
+            "national_format": lookup_result.national_format,
+            "valid": lookup_result.valid,
+        }
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e), "valid": False}
 
 @app.on_event("startup")
 async def startup_event():
