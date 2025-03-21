@@ -37,3 +37,4 @@ ENV/
 documents/
 *.png
 results/ 
+.DS_Store
