@@ -36,7 +36,7 @@ class PropertyData(BaseModel):
 
 
 class AnalyzerNode:
-    """Node for analyzing property data and saving results to spreadsheet."""
+    """Node for analyzing property data"""
 
     def __init__(self, model_name="gpt-4o", temperature=0):
         """Initialize the analyzer node."""
@@ -44,19 +44,21 @@ class AnalyzerNode:
         self.parser = JsonOutputParser(pydantic_object=PropertyData)
 
     def run(self, state: PropertyResearchState) -> dict:
-        """Extract data from property research state and save to spreadsheet."""
-        logger.info("🧠 Analyzing property data and saving to spreadsheet")
-        print("🧠 Analyzing property data and saving to spreadsheet")
+        """Extract data from property research state"""
+        logger.info("🧠 Analyzing property data")
+        print("🧠 Analyzing property data")
 
         try:
             # Extract all needed data using LLM
             extracted_data = self._extract_data_with_llm(state)
+            print(f"Extracted data in analyzer: {extracted_data}")
+            
+            # Save extracted_data to state so other nodes can access it
+            state["extracted_data"] = extracted_data
 
-            # Save to spreadsheet
-            self._save_to_spreadsheet(state, extracted_data)
-
-            # Return minimal state update
+            # Return complete state update including extracted_data to ensure it's preserved
             return {
+                "extracted_data": extracted_data,  # Include the full extracted data
                 "owner_name": extracted_data["owner_name"],
                 "owner_type": extracted_data["owner_type"],
                 "contact_number": extracted_data["primary_phone"] or "Not available",
@@ -67,7 +69,18 @@ class AnalyzerNode:
         except Exception as e:
             logger.error(f"Analysis error: {str(e)}")
             logger.exception("Detailed error:")
+            
+            # Use fallback extraction
+            fallback_data = self._fallback_extraction(state)
+            
+            # Save fallback data to state
+            state["extracted_data"] = fallback_data
+            
             return {
+                "extracted_data": fallback_data,
+                "owner_name": fallback_data.get("owner_name", "Unknown"),
+                "owner_type": fallback_data.get("owner_type", "unknown"),
+                "contact_number": fallback_data.get("primary_phone", ""),
                 "errors": [f"Analysis error: {str(e)}"],
                 "current_step": "Analysis failed",
                 "next_steps": ["complete"],
@@ -286,73 +299,4 @@ class AnalyzerNode:
         else:
             return "individual"
 
-    def _save_to_spreadsheet(self, state: Dict[str, Any], extracted_data: Dict[str, Any]) -> None:
-        """Save property ownership data to Excel spreadsheet."""
-        # Create results directory if needed
-        results_dir = os.path.join(os.getcwd(), "results")
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
-            logger.info(f"Created results directory: {results_dir}")
-
-        excel_path = os.path.join(results_dir, "property_owners.xlsx")
-
-        # Define columns
-        columns = [
-            "Property Address",
-            "Contact 1",
-            "Contact 2",
-            "Contact 3",
-            "Contact 4",
-            "Company",
-            "Phone 1",
-            "Phone 2",
-            "Phone 3",
-            "Phone 4",
-            "Phone 5",
-            "Phone 6",
-            "Email 1",
-            "Email 2",
-            "Email 3",
-            "Email 4",
-            "Owner Type",
-            "Confidence",
-            "Notes",
-        ]
-
-        # Prepare data for spreadsheet
-        address = state["address"]
-        company = extracted_data.get("company", "")
-        if not company and extracted_data["owner_type"].lower() in ["llc", "corporation"]:
-            company = extracted_data["owner_name"]
-
-        contacts = (extracted_data["contacts"] + [""] * 4)[:4]
-        phones = (extracted_data["phones"] + [""] * 6)[:6]
-        emails = (extracted_data["emails"] + [""] * 4)[:4]
-        owner_type = extracted_data["owner_type"]
-        confidence = extracted_data["confidence"]
-        notes = extracted_data.get("notes", "")
-
-        # Create row data
-        new_row = (
-            [address] + contacts + [company] + phones + emails + [owner_type, confidence, notes]
-        )
-
-        # Load existing spreadsheet or create new one
-        try:
-            if os.path.exists(excel_path):
-                df = pd.read_excel(excel_path)
-                # Skip if address already exists
-                if address in df["Property Address"].values:
-                    logger.info(f"Address '{address}' already exists in spreadsheet, skipping")
-                    return
-            else:
-                df = pd.DataFrame(columns=columns)
-
-            # Add new row and save
-            df.loc[len(df)] = new_row
-            df.to_excel(excel_path, index=False)
-            logger.info(f"Saved property data to {excel_path}")
-            print(f"📊 Saved property data to spreadsheet: {excel_path}")
-
-        except Exception as e:
-            logger.error(f"Error saving spreadsheet: {e}")
+    

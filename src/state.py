@@ -85,6 +85,20 @@ class PropertyResearchState(InputState):
     - associates: Business associates
     """
 
+    # Extracted data - consolidated information from various sources
+    extracted_data: Optional[Dict[str, Any]]
+    """
+    Consolidated data extracted by the LLM from all sources:
+    - owner_name: The name of the property owner (individual or entity)
+    - owner_type: Type of owner (individual, llc, corporation, etc.)
+    - contacts: List of contact names
+    - phones: List of phone numbers
+    - emails: List of email addresses
+    - company: Company or business name if applicable
+    - confidence: Confidence level of the extracted information
+    - notes: Additional notes about the property
+    """
+
     # Extracted owner information - consolidated from all sources
     owner_name: Optional[str]
     """Primary owner name (individual or company) extracted from all sources"""

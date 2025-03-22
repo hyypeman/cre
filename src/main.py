@@ -17,6 +17,7 @@ from .nodes import (
     OpenCorporatesNode,
     SkipGenieNode,
     TruePeopleSearchNode,
+    SpreadsheetNode,
 )
 
 # Set up logging
@@ -53,6 +54,7 @@ class PropertyResearchGraph:
         self.skipgenie_node = SkipGenieNode()
         self.true_people_search_node = TruePeopleSearchNode()
         self.analyzer = AnalyzerNode()
+        self.spreadsheet_node = SpreadsheetNode()
 
     def _build_workflow(self):
         """Configure the state graph workflow"""
@@ -69,7 +71,7 @@ class PropertyResearchGraph:
         self.workflow.add_node("search_skipgenie", self.skipgenie_node.run)
         self.workflow.add_node("search_true_people", self.true_people_search_node.run)
         self.workflow.add_node("analyze_owner", self.analyzer.run)
-
+        self.workflow.add_node("save_to_spreadsheet", self.spreadsheet_node.run)
         # Phase 1: Initial data collection
         self.workflow.add_edge(START, "initialize")
 
@@ -100,7 +102,8 @@ class PropertyResearchGraph:
         # Phase 3: People search and completion
         self.workflow.add_edge("search_opencorporates", "search_skipgenie")
         self.workflow.add_edge("search_skipgenie", "search_true_people")
-        self.workflow.add_edge("search_true_people", END)
+        self.workflow.add_edge("search_true_people", "save_to_spreadsheet")
+        self.workflow.add_edge("save_to_spreadsheet", END)
 
     def _has_documents(self, state: PropertyResearchState) -> bool:
         """Check if ACRIS returned documents that need processing."""
