@@ -7,6 +7,7 @@ from .property_shark_node import PropertySharkNode
 from .opencorporates_node import OpenCorporatesNode
 from .skipgenie_node import SkipGenieNode
 from .true_people_search_node import TruePeopleSearchNode
+from .phone_verify_node import TwilioNode
 
 __all__ = [
     "InitializerNode",
@@ -18,4 +19,5 @@ __all__ = [
     "OpenCorporatesNode",
     "SkipGenieNode",
     "TruePeopleSearchNode",
+    "TwilioNode",
 ]

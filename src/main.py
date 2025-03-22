@@ -17,6 +17,7 @@ from .nodes import (
     OpenCorporatesNode,
     SkipGenieNode,
     TruePeopleSearchNode,
+    TwilioNode,
 )
 
 # Set up logging
@@ -52,6 +53,7 @@ class PropertyResearchGraph:
         self.opencorporates_node = OpenCorporatesNode()
         self.skipgenie_node = SkipGenieNode()
         self.true_people_search_node = TruePeopleSearchNode()
+        self.twilio_node = TwilioNode()
         self.analyzer = AnalyzerNode()
 
     def _build_workflow(self):
@@ -68,6 +70,7 @@ class PropertyResearchGraph:
         self.workflow.add_node("search_opencorporates", self.opencorporates_node.run)
         self.workflow.add_node("search_skipgenie", self.skipgenie_node.run)
         self.workflow.add_node("search_true_people", self.true_people_search_node.run)
+        self.workflow.add_node("verify_phone", self.twilio_node.run)
         self.workflow.add_node("analyze_owner", self.analyzer.run)
 
         # Phase 1: Initial data collection
@@ -100,7 +103,14 @@ class PropertyResearchGraph:
         # Phase 3: People search and completion
         self.workflow.add_edge("search_opencorporates", "search_skipgenie")
         self.workflow.add_edge("search_skipgenie", "search_true_people")
-        self.workflow.add_edge("search_true_people", END)
+        
+        # Add phone verification after people search
+        self.workflow.add_conditional_edges(
+            "search_true_people",
+            lambda state: state.get("owner_name") is not None,  # Process all results that have an owner
+            {True: "verify_phone", False: END},
+        )
+        self.workflow.add_edge("verify_phone", END)
 
     def _has_documents(self, state: PropertyResearchState) -> bool:
         """Check if ACRIS returned documents that need processing."""
@@ -157,6 +167,9 @@ class PropertyResearchGraph:
             person_search_results=None,
             owner_name=None,
             owner_type=None,
+            phone_verification=None,
+            phone_number_valid=None,
+            phone_analysis=None,
             contact_number=None,
             current_step="starting workflow",
             next_steps=["initialize"],
@@ -261,7 +274,21 @@ def main():
         print("\nOwnership Information:")
         print(f"Owner Name: {result.get('owner_name', 'Unknown')}")
         print(f"Owner Type: {result.get('owner_type', 'Unknown')}")
-        print(f"Contact Number: {result.get('contact_number', 'Not available')}")
+        
+        # Display phone information with enhanced validation info
+        print("\nPhone Information:")
+        if result.get("phone_analysis") and result["phone_analysis"].get("primary_phone"):
+            primary = result["phone_analysis"]["primary_phone"]
+            print(f"Primary Phone: {primary.get('formatted', 'Unknown')} (Verified)")
+            
+            # Show all valid phones
+            if result["phone_analysis"].get("valid_phones"):
+                print("\nAll Valid Phone Numbers:")
+                for i, phone in enumerate(result["phone_analysis"]["valid_phones"], 1):
+                    print(f"  {i}. {phone.get('formatted', phone.get('number', 'Unknown'))}")
+        else:
+            print(f"Contact Number: {result.get('contact_number', 'Not available')} (Not verified)")
+            
         print(f"Address: {result.get('address', 'Unknown')}")
 
     print(f"\nProcessed {len(results)} addresses")

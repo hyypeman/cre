@@ -55,7 +55,10 @@ class AnalyzerNode:
             # Save to spreadsheet
             self._save_to_spreadsheet(state, extracted_data)
 
-            # Return minimal state update
+            # Get primary phone for verification
+            primary_phone = extracted_data.get("primary_phone", "")
+
+            # Return state update with phone number for verification
             return {
                 "owner_name": extracted_data["owner_name"],
                 "owner_type": extracted_data["owner_type"],
