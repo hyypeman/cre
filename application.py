@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 from motor.motor_asyncio import AsyncIOMotorClient
 from src.main import PropertyResearchGraph
-from twilio.rest import Client
+from src.utils.twilio import verify_phone_number
 
 # Configure logging
 logging.basicConfig(
@@ -244,23 +244,13 @@ async def health_check():
     }
 
 @app.get("/api/phone/verify/{phone_number}")
-async def verify_phone_number(phone_number: str):
-    """Verify a phone number."""
-    try:
-        client = Client(account_sid, auth_token)
-        lookup_result = client.lookups.v2.phone_numbers(phone_number).fetch()
-        
-        # Extract only the needed information instead of returning the whole object
-        result = {
-            "status": "success",
-            "phone_number": lookup_result.phone_number,
-            "country_code": lookup_result.country_code,
-            "national_format": lookup_result.national_format,
-            "valid": lookup_result.valid,
-        }
-        return result
-    except Exception as e:
-        return {"status": "error", "message": str(e), "valid": False}
+async def verify_number(phone_number: str):
+   result = await verify_phone_number(phone_number)
+   if result["valid"]:
+      print(f"Valid number: {result['national_format']}")
+   else:
+      print(f"Invalid number: {result['message']}")
+   return result
 
 @app.on_event("startup")
 async def startup_event():
