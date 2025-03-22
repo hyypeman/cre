@@ -142,27 +142,36 @@ class TwilioNode:
         valid_phones = []
         invalid_phones = []
         
-        # Create event loop for async calls
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         try:
-            # Create tasks for each phone number
-            tasks = [verify_phone_number(phone) for phone in phone_numbers]
-            results = loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-            
-            # Process results
-            for phone, result in zip(phone_numbers, results):
-                if isinstance(result, Exception):
-                    logger.error(f"Error validating {phone}: {str(result)}")
-                    invalid_phones.append(phone)
-                elif result.get("valid", False):
-                    valid_phones.append({
-                        "number": phone,
-                        "formatted": result.get("national_format", phone),
-                        "country_code": result.get("country_code", "unknown")
-                    })
-                else:
+            # Handle each phone number validation sequentially instead of using asyncio.gather
+            for phone in phone_numbers:
+                try:
+                    # Use a synchronous approach by creating a simple synchronous wrapper
+                    import asyncio
+                    
+                    # Create a coroutine and run it synchronously
+                    async def run_verification():
+                        return await verify_phone_number(phone)
+                    
+                    # Use asyncio.run for Python 3.7+ which handles creating/closing loops properly
+                    # or fall back to a safer method for older Python versions
+                    try:
+                        result = asyncio.run(run_verification())
+                    except RuntimeError:  # If we're already in an event loop
+                        # Alternative method that works in an existing event loop
+                        current_loop = asyncio.get_event_loop()
+                        result = current_loop.run_until_complete(run_verification())
+                    
+                    if result.get("valid", False):
+                        valid_phones.append({
+                            "number": phone,
+                            "formatted": result.get("national_format", phone),
+                            "country_code": result.get("country_code", "unknown")
+                        })
+                    else:
+                        invalid_phones.append(phone)
+                except Exception as e:
+                    logger.error(f"Error validating {phone}: {str(e)}")
                     invalid_phones.append(phone)
                     
             return {
@@ -170,8 +179,13 @@ class TwilioNode:
                 "invalid": invalid_phones
             }
         
-        finally:
-            loop.close()
+        except Exception as e:
+            logger.error(f"Error in phone validation process: {str(e)}")
+            # Return empty results on complete failure
+            return {
+                "valid": [],
+                "invalid": phone_numbers
+            }
     
     def _determine_primary_phone(self, validation_results: Dict[str, List], state: PropertyResearchState) -> Dict[str, Any]:
         """Determine the primary (most reliable) phone number."""
