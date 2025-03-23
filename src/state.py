@@ -65,6 +65,40 @@ class PropertyResearchState(InputState):
       - data: Entity name, address, source, and last recorded update
     """
 
+    # Phone numbers from different sources
+    property_shark_phones: Optional[List[Dict[str, Any]]]
+    """Phone numbers extracted from PropertyShark data with details about the contacts"""
+
+    skipgenie_phones: Optional[List[Dict[str, Any]]]
+    """Phone numbers from SkipGenie search results"""
+
+    truepeoplesearch_phones: Optional[List[Dict[str, Any]]]
+    """Phone numbers from TruePeopleSearch results"""
+
+    refined_phone_numbers: Optional[List[Dict[str, Any]]]
+    """
+    Refined phone numbers with confidence levels:
+    - number: The phone number
+    - confidence: high, medium, or low based on source agreement
+    - sources: List of sources that provided this number
+    - contact_name: Associated contact name if available
+    """
+
+    refined_phone_data: Optional[Dict[str, List[Dict[str, Any]]]]
+    """Refined phone numbers organized by individual contact"""
+
+    # Individual owners/contacts identified
+    individual_owners: Optional[List[Dict[str, Any]]]
+    """
+    List of individual owners/contacts identified from all sources:
+    - name: The individual's name
+    - source: Where this individual was identified (PropertyShark, ACRIS, etc.)
+    - type: Role or relationship to the property (owner, manager, etc.)
+    """
+
+    has_individual_owners: Optional[bool]
+    """Flag indicating if any individual owners were identified"""
+
     # OpenCorporates data - company information for LLC owners
     company_registry_data: Optional[Dict[str, Any]]
     """
