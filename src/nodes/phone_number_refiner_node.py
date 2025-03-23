@@ -58,7 +58,7 @@ class PhoneNumberRefinerNode:
                 return {
                     "refined_phone_data": {},
                     "refined_phone_numbers": [],
-                    "contact_number": None,
+                    "contact_number": "",  # Empty string instead of None
                     "current_step": "Phone number refinement skipped (no numbers found)",
                     "next_steps": ["finalize"],
                 }
@@ -72,7 +72,7 @@ class PhoneNumberRefinerNode:
                 individual_owners,
             )
 
-            # Return the analyzed results
+            # Return the analyzed results with guaranteed non-None values
             return {
                 "refined_phone_data": analysis_result.get("phone_data_by_contact", {}),
                 "refined_phone_numbers": analysis_result.get("refined_phone_numbers", []),
@@ -86,11 +86,11 @@ class PhoneNumberRefinerNode:
             logger.error(f"Phone number refinement error: {str(e)}")
             logger.exception("Detailed error:")
 
-            # Return error state
+            # Return error state with empty collections instead of None
             return {
                 "refined_phone_data": {},
                 "refined_phone_numbers": [],
-                "contact_number": None,
+                "contact_number": "",  # Empty string instead of None
                 "current_step": f"Phone number refinement error: {str(e)}",
                 "next_steps": ["finalize"],
                 "errors": [f"Phone number refinement error: {str(e)}"],
@@ -294,12 +294,18 @@ class PhoneNumberRefinerNode:
         - The same phone number might be associated with different contacts
         - Some contacts may have multiple phone numbers
         - Names may vary slightly between sources (e.g., "John Smith" vs "J. Smith")
+        
+        # IMPORTANT: Your response MUST include these fields:
+        - refined_phone_numbers: A list of refined phone number objects
+        - primary_phone: The best phone number to use (as a string)
+        - phone_data_by_contact: A dictionary mapping contact names to their phone numbers
+        - notes: Your observations on the analysis
         """
 
-        # Create chain with structured output
-        chain = self.llm.with_structured_output(PhoneNumberAnalysisResponse)
-
         try:
+            # Create chain with structured output
+            chain = self.llm.with_structured_output(PhoneNumberAnalysisResponse)
+
             # Get structured response from LLM
             result = chain.invoke(prompt)
             logger.info(f"Successfully analyzed phone numbers for {state['address']}")
@@ -309,11 +315,26 @@ class PhoneNumberRefinerNode:
 
         except Exception as e:
             logger.error(f"Error in LLM phone number analysis: {str(e)}")
+            logger.info("Falling back to simple analysis due to LLM error")
+
             # Fall back to simple analysis
             normalized_numbers = self._normalize_phone_data(
                 property_shark_phones, skipgenie_phones, truepeoplesearch_phones
             )
-            return self._simple_phone_analysis(normalized_numbers, individual_owners)
+
+            # Ensure the fallback analysis doesn't throw exceptions
+            try:
+                return self._simple_phone_analysis(normalized_numbers, individual_owners)
+            except Exception as fallback_error:
+                logger.error(f"Error in fallback phone analysis: {str(fallback_error)}")
+
+                # Return a minimal valid structure if all else fails
+                return {
+                    "refined_phone_numbers": [],
+                    "primary_phone": "",
+                    "phone_data_by_contact": {},
+                    "notes": f"Phone number analysis failed: {str(e)}. Fallback also failed: {str(fallback_error)}",
+                }
 
     def _normalize_phone(self, phone: str) -> str:
         """Normalize phone number for comparison by removing all non-digits."""

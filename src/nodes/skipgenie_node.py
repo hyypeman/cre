@@ -38,6 +38,7 @@ class SkipGenieNode:
                 "current_step": "SkipGenie search skipped (no individual owners)",
                 "next_steps": ["search_true_people"],
                 "skipgenie_phones": [],
+                "skipgenie_results": [],  # Ensure consistent empty list here
             }
 
         # Log the search operation
@@ -51,6 +52,7 @@ class SkipGenieNode:
                 "current_step": "SkipGenie search skipped (credentials not set)",
                 "next_steps": ["search_true_people"],
                 "skipgenie_phones": [],
+                "skipgenie_results": [],  # Ensure consistent empty list here
             }
 
         # Initialize results storage
@@ -60,7 +62,11 @@ class SkipGenieNode:
         # Search for each individual owner
         for owner in individual_owners:
             owner_name = owner["name"]
-            logger.info(f"Searching for: {owner_name}")
+            logger.info(f"Searching contact name: {owner_name}")
+
+            # Get metadata for reference
+            owner_source = owner.get("source", "Unknown")
+            owner_type = owner.get("type", "Unknown")
 
             try:
                 # Try to parse the name into first and last components
@@ -118,7 +124,9 @@ class SkipGenieNode:
                         contact = {
                             "name": contact_name,
                             "phones": [],
-                            "original_search": owner_name,
+                            "owner_name": owner_name,
+                            "owner_source": owner_source,
+                            "owner_type": owner_type,
                         }
 
                         # Get phones if available
@@ -140,8 +148,10 @@ class SkipGenieNode:
                                     {
                                         "number": phone_number,
                                         "contact_name": contact_name,
-                                        "original_search": owner_name,
-                                        "type": phone_type,
+                                        "owner_name": owner_name,
+                                        "owner_source": owner_source,
+                                        "owner_type": owner_type,
+                                        "phone_type": phone_type,
                                         "source": "SkipGenie",
                                         "confidence": "medium",
                                     }
@@ -155,17 +165,10 @@ class SkipGenieNode:
                 logger.error(f"Error searching SkipGenie for {owner_name}: {str(e)}")
                 continue
 
-        # Return results
-        if contact_info:
-            return {
-                "current_step": f"SkipGenie search completed - found data for {len(contact_info)} individuals",
-                "next_steps": ["search_true_people"],
-                "skipgenie_results": contact_info,
-                "skipgenie_phones": skipgenie_phones,
-            }
-        else:
-            return {
-                "current_step": "SkipGenie search completed - no results found",
-                "next_steps": ["search_true_people"],
-                "skipgenie_phones": [],
-            }
+        # Return results - always include empty lists to ensure consistency
+        return {
+            "current_step": f"SkipGenie search completed - found data for {len(contact_info)} individuals",
+            "next_steps": ["search_true_people"],
+            "skipgenie_results": contact_info,  # This will be an empty list if no results
+            "skipgenie_phones": skipgenie_phones,  # This will be an empty list if no results
+        }

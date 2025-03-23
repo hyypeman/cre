@@ -36,9 +36,9 @@ class PropertyAnalysisResponse(BaseModel):
         description="Company name if owner is LLC or corporation, otherwise empty string"
     )
 
-    # Individual owners
+    # Individual owners - restructured to separate name from metadata
     individual_owners: List[Dict[str, str]] = Field(
-        description="List of individual owners/contacts with name, source, and type"
+        description="List of individual owners/contacts with clean name and metadata separated"
     )
     has_individual_owners: bool = Field(description="Whether any individual owners were identified")
 
@@ -67,12 +67,18 @@ class AnalyzerNode:
             # Extract PropertyShark phone numbers separately if available
             property_shark_phones = self._extract_property_shark_phones(state)
 
+            # Perform final validation of individual owners to ensure clean names
+            individual_owners = self._ensure_clean_individual_owners(
+                analysis.get("individual_owners", [])
+            )
+
             # Store extracted data in state
             updated_state = {
                 "owner_name": analysis.get("owner_name", "Unknown"),
                 "owner_type": analysis.get("owner_type", "unknown"),
-                "individual_owners": analysis.get("individual_owners", []),
-                "has_individual_owners": analysis.get("has_individual_owners", False),
+                "individual_owners": individual_owners,
+                "has_individual_owners": analysis.get("has_individual_owners", False)
+                and len(individual_owners) > 0,
                 "confidence": analysis.get("confidence", "low"),
                 "extracted_contacts": analysis.get("contacts", []),
                 "extracted_emails": analysis.get("emails", []),
@@ -141,10 +147,11 @@ class AnalyzerNode:
         2. INDIVIDUAL OWNERS/CONTACTS
            - Identify all individual owners/contacts associated with this property from all sources
            - For each individual owner/contact identified, provide:
-             * name: Their full name
+             * name: Their full name (do NOT include source, type, or any other annotations in the name)
              * source: Where you found this person (PropertyShark, ACRIS, ZoLa, etc.)
              * type: Their role (owner, manager, member, etc.)
            - Determine if we have any individual owners identified (true/false)
+           - IMPORTANT: Keep the name field clean with ONLY the person's name
         
         3. CONTACT INFORMATION
            - Contact names associated with the property (up to 4)
@@ -232,25 +239,37 @@ class AnalyzerNode:
 
                 # Try to extract individual owners from ACRIS
                 if "individual_owners" in record and record["individual_owners"]:
+                    idx = 0
                     for ind_owner in record["individual_owners"]:
                         name = ind_owner.get("name", "")
                         if name:
+                            idx += 1
+                            # Store clean name and metadata separately
                             individual_owners.append(
                                 {
-                                    "name": name,
+                                    "name": name,  # Store only the name
                                     "source": "ACRIS",
-                                    "type": ind_owner.get("title", "unknown"),
+                                    "type": ind_owner.get("title", "owner"),
+                                    "order": idx,  # Store order as separate field
                                 }
                             )
                             has_individual_owners = True
 
         # Extract individuals from PropertyShark if available
         if isinstance(ps_data, dict) and "real_owners" in ps_data:
+            ps_idx = 0
             for owner in ps_data["real_owners"]:
                 name = owner.get("name", "")
                 if name:
+                    ps_idx += 1
+                    # Store clean name and metadata separately
                     individual_owners.append(
-                        {"name": name, "source": "PropertyShark", "type": "real_owner"}
+                        {
+                            "name": name,  # Store only the name
+                            "source": "PropertyShark",
+                            "type": "real_owner",
+                            "order": ps_idx,  # Store order as separate field
+                        }
                     )
                     has_individual_owners = True
 
@@ -390,3 +409,203 @@ class AnalyzerNode:
         except Exception as e:
             logger.warning(f"Error extracting PropertyShark phones: {str(e)}")
             return []
+
+    def _ensure_clean_individual_owners(
+        self, individual_owners: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Validate and clean individual owner names using LLM to ensure no annotations are present.
+
+        Args:
+            individual_owners: List of individual owner dictionaries
+
+        Returns:
+            Cleaned list of individual owners
+        """
+        if not individual_owners:
+            return []
+
+        cleaned_owners = []
+        names_to_clean = []
+
+        # First pass: identify names that need cleaning
+        for i, owner in enumerate(individual_owners):
+            if not isinstance(owner, dict) or "name" not in owner:
+                continue
+
+            name = owner["name"]
+
+            # Check if name likely has annotations
+            if "(" in name or "-" in name or ":" in name:
+                names_to_clean.append({"index": i, "original_name": name, "owner_data": owner})
+            else:
+                cleaned_owners.append(owner)
+
+        # If no names need cleaning, return the original list
+        if not names_to_clean:
+            return individual_owners
+
+        # Use LLM to clean names and extract metadata in batch
+        cleaned_data = self._clean_names_with_llm(names_to_clean)
+
+        # Add cleaned data to the final list
+        for item in cleaned_data:
+            cleaned_owners.append(item)
+
+        # Sort the cleaned owners to maintain original order
+        cleaned_owners.sort(key=lambda x: x.get("order", 999))
+
+        return cleaned_owners
+
+    def _clean_names_with_llm(self, names_to_clean: List[Dict]) -> List[Dict[str, Any]]:
+        """
+        Use LLM to clean names and extract metadata from annotated names.
+
+        Args:
+            names_to_clean: List of dictionaries containing names that need cleaning
+
+        Returns:
+            List of owner dictionaries with clean names and extracted metadata
+        """
+        if not names_to_clean:
+            return []
+
+        # Prepare the prompt for the LLM
+        prompt = """
+        You are an expert in data cleaning. I have a list of names with annotations that I need cleaned.
+        For each name, I need you to:
+        
+        1. Extract just the person's name without any annotations, numbers, or role information
+        2. Extract metadata like the person's role (owner, member, manager, etc.)
+        3. Extract the source of the information (ACRIS, PropertyShark, etc.)
+        
+        Here are the annotated names:
+        
+        """
+
+        for i, item in enumerate(names_to_clean):
+            prompt += f'{i + 1}. "{item["original_name"]}"\n'
+
+        prompt += """
+        Please provide a structured response in the following format:
+        
+        ```json
+        [
+          {
+            "original": "Annotated name as provided",
+            "clean_name": "Just the person's name",
+            "role": "Their role (if found)",
+            "source": "Information source (if found)",
+            "notes": "Any additional information"
+          },
+          ...
+        ]
+        ```
+        
+        Always preserve the original list order. If any information can't be determined, use "unknown" for that field.
+        """
+
+        try:
+            # Create a message for the LLM
+            messages = [
+                SystemMessage(
+                    content="You are a data cleaning assistant that extracts clean names and metadata from annotated text."
+                ),
+                HumanMessage(content=prompt),
+            ]
+
+            # Get response from the LLM
+            response = self.llm.invoke(messages)
+
+            # Extract JSON from the response text
+            json_text = ""
+            in_json = False
+
+            for line in response.content.split("\n"):
+                if line.strip() == "```json":
+                    in_json = True
+                    continue
+                elif line.strip() == "```" and in_json:
+                    break
+                elif in_json:
+                    json_text += line + "\n"
+
+            # Parse the JSON response
+            if json_text:
+                cleaned_data = json.loads(json_text)
+
+                # Match the cleaned data back to the original items and create owner dictionaries
+                result = []
+
+                for i, item in enumerate(names_to_clean):
+                    try:
+                        original_owner = item["owner_data"]
+                        cleaned_info = cleaned_data[i] if i < len(cleaned_data) else None
+
+                        if cleaned_info:
+                            # Create a new owner dictionary with the cleaned name
+                            clean_owner = original_owner.copy()
+
+                            # Update with cleaned data
+                            clean_owner["name"] = cleaned_info["clean_name"].strip()
+
+                            # Only update metadata if not already present
+                            if "role" in cleaned_info and cleaned_info["role"] != "unknown":
+                                if (
+                                    "type" not in clean_owner
+                                    or not clean_owner["type"]
+                                    or clean_owner["type"] == "unknown"
+                                ):
+                                    clean_owner["type"] = cleaned_info["role"]
+
+                            if "source" in cleaned_info and cleaned_info["source"] != "unknown":
+                                if "source" not in clean_owner or not clean_owner["source"]:
+                                    clean_owner["source"] = cleaned_info["source"]
+
+                            # Keep track of the original order
+                            clean_owner["order"] = item["index"]
+
+                            # Add to results
+                            result.append(clean_owner)
+
+                            # Log the cleaning
+                            logger.info(
+                                f"LLM cleaned name: '{item['original_name']}' -> '{clean_owner['name']}'"
+                            )
+                        else:
+                            # Fallback: add the original owner data
+                            original_owner["order"] = item["index"]
+                            result.append(original_owner)
+                    except Exception as e:
+                        logger.warning(f"Error processing cleaned data for item {i}: {str(e)}")
+                        # Fallback: add the original owner data
+                        original_owner = item["owner_data"].copy()
+                        original_owner["order"] = item["index"]
+                        result.append(original_owner)
+
+                return result
+            else:
+                logger.warning("Could not extract JSON from LLM response")
+        except Exception as e:
+            logger.error(f"Error using LLM to clean names: {str(e)}")
+
+        # Fallback: return the original data if LLM cleaning fails
+        fallback_result = []
+        for item in names_to_clean:
+            owner_data = item["owner_data"].copy()
+            owner_data["order"] = item["index"]
+
+            # Apply basic regex cleaning as a last resort
+            if "(" in owner_data["name"] or "-" in owner_data["name"]:
+                clean_name = re.sub(r"\s*\(\d+\)\s*-\s*[^()]+\([^()]+\)", "", owner_data["name"])
+                clean_name = re.sub(r"\s*\([^)]*\)", "", clean_name)
+                clean_name = re.sub(r"\s*-\s*[^-]*$", "", clean_name)
+                clean_name = clean_name.strip()
+
+                if clean_name != owner_data["name"]:
+                    logger.warning(f"Fallback cleaning: '{owner_data['name']}' -> '{clean_name}'")
+                    owner_data["name"] = clean_name
+
+            fallback_result.append(owner_data)
+
+        return fallback_result

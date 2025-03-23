@@ -36,6 +36,7 @@ class TruePeopleSearchNode:
                 "current_step": "TruePeopleSearch search skipped (no individual owners)",
                 "next_steps": ["refine_phone_numbers"],
                 "truepeoplesearch_phones": [],
+                "truepeoplesearch_results": [],  # Ensure consistent empty list here
             }
 
         # Log the search operation
@@ -50,7 +51,11 @@ class TruePeopleSearchNode:
         # Search for each individual owner
         for owner in individual_owners:
             owner_name = owner["name"]
-            logger.info(f"Searching for: {owner_name}")
+            logger.info(f"Searching contact name: {owner_name}")
+
+            # Get metadata for reference
+            owner_source = owner.get("source", "Unknown")
+            owner_type = owner.get("type", "Unknown")
 
             try:
                 # Perform the actual search - only by name, never by address
@@ -71,7 +76,9 @@ class TruePeopleSearchNode:
 
                     owner_contact = {
                         "name": contact_name,
-                        "original_search": owner_name,
+                        "owner_name": owner_name,
+                        "owner_source": owner_source,
+                        "owner_type": owner_type,
                         "phones": [],
                         "emails": first_result.get("emails", []),
                     }
@@ -96,8 +103,10 @@ class TruePeopleSearchNode:
                                     {
                                         "number": phone_number,
                                         "contact_name": contact_name,
-                                        "original_search": owner_name,
-                                        "type": phone["type"],
+                                        "owner_name": owner_name,
+                                        "owner_source": owner_source,
+                                        "owner_type": owner_type,
+                                        "phone_type": phone["type"],
                                         "provider": phone.get("provider", "Unknown"),
                                         "source": "TruePeopleSearch",
                                         "confidence": "medium",
@@ -113,11 +122,11 @@ class TruePeopleSearchNode:
                 errors.append(error_msg)
                 continue
 
-        # Return results
+        # Return results - always include empty lists even if there are no results
         return {
             "current_step": f"TruePeopleSearch search completed - found data for {len(contact_info)} individuals",
             "next_steps": ["refine_phone_numbers"],
-            "truepeoplesearch_results": contact_info,
-            "truepeoplesearch_phones": truepeoplesearch_phones,
-            "errors": errors if errors else None,
+            "truepeoplesearch_results": contact_info,  # This will be an empty list if no results
+            "truepeoplesearch_phones": truepeoplesearch_phones,  # This will be an empty list if no results
+            "errors": errors if errors else [],  # Use empty list instead of None
         }
