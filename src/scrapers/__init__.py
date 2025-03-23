@@ -7,6 +7,8 @@ This package contains scrapers for various property data sources:
 - Document Processor: Tools for extracting data from property documents
 - PropertyShark: Property ownership information
 - OpenCorporates: Company information for LLC owners
+- SkipEngine: Person and contact lookup service
+- TruePeopleSearch: People finder service for contact information
 """
 
 from .zola_scraper import lookup_zola_owner
@@ -14,6 +16,8 @@ from .acris_scraper import search_acris
 from .document_processor import extract_text_from_pdf
 from .property_shark_scraper import search_shark
 from .opencorporates_scraper import search_opencorporate
+from .skipengine_scrapper import search_skipengine
+from .truepeoplesearch_scraper import search_truepeoplesearch
 
 __all__ = [
     "lookup_zola_owner",
@@ -21,4 +25,6 @@ __all__ = [
     "extract_text_from_pdf",
     "search_shark",
     "search_opencorporate",
+    "search_skipengine",
+    "search_truepeoplesearch",
 ]

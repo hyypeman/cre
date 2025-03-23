@@ -13,56 +13,87 @@ from ..state import PropertyResearchState
 logger = logging.getLogger(__name__)
 
 
-class PropertyData(BaseModel):
-    """Schema for property data extraction."""
+class PropertyAnalysisResponse(BaseModel):
+    """Unified schema for property data and owner analysis."""
 
+    # Basic property information
     owner_name: str = Field(description="The full legal name of the owner (individual or entity)")
     owner_type: str = Field(description="One of: llc, corporation, individual, or unknown")
     confidence: str = Field(description="One of: high, medium, or low")
-    contacts: List[str] = Field(description="Up to 4 contact names associated with the property")
+
+    # Contact information
+    contacts: List[str] = Field(description="Contact names associated with the property (up to 4)")
     phones: List[str] = Field(
-        description="Up to 6 phone numbers associated with the property or contacts"
+        description="Phone numbers associated with the property or contacts (up to 6)"
     )
     emails: List[str] = Field(
-        description="Up to 4 email addresses associated with the property or contacts"
+        description="Email addresses associated with the property or contacts (up to 4)"
     )
     primary_phone: str = Field(description="The most reliable phone number")
-    company: str = Field(
+
+    # Company information
+    company_name: str = Field(
         description="Company name if owner is LLC or corporation, otherwise empty string"
     )
+
+    # Individual owners - restructured to separate name from metadata
+    individual_owners: List[Dict[str, str]] = Field(
+        description="List of individual owners/contacts with clean name and metadata separated"
+    )
+    has_individual_owners: bool = Field(description="Whether any individual owners were identified")
+
+    # Additional information
     notes: str = Field(
         description="Any explanations, observations, or additional context about the data"
     )
 
 
 class AnalyzerNode:
-    """Node for analyzing property data and saving results to spreadsheet."""
+    """Node for analyzing property data and extracting ownership information."""
 
     def __init__(self, model_name="gpt-4o", temperature=0):
         """Initialize the analyzer node."""
         self.llm = ChatOpenAI(model=model_name, temperature=0)
-        self.parser = JsonOutputParser(pydantic_object=PropertyData)
 
     def run(self, state: PropertyResearchState) -> dict:
-        """Extract data from property research state and save to spreadsheet."""
-        logger.info("🧠 Analyzing property data and saving to spreadsheet")
-        print("🧠 Analyzing property data and saving to spreadsheet")
+        """Extract data from property research state and store in the state."""
+        logger.info("🧠 Analyzing property data and extracting ownership information")
+        print("🧠 Analyzing property data and extracting ownership information")
 
         try:
-            # Extract all needed data using LLM
-            extracted_data = self._extract_data_with_llm(state)
+            # Extract all property data with LLM in a single call
+            analysis = self._analyze_property_data(state)
 
-            # Save to spreadsheet
-            self._save_to_spreadsheet(state, extracted_data)
+            # Extract PropertyShark phone numbers separately if available
+            property_shark_phones = self._extract_property_shark_phones(state)
 
-            # Return minimal state update
-            return {
-                "owner_name": extracted_data["owner_name"],
-                "owner_type": extracted_data["owner_type"],
-                "contact_number": extracted_data["primary_phone"] or "Not available",
+            # Perform final validation of individual owners to ensure clean names
+            individual_owners = self._ensure_clean_individual_owners(
+                analysis.get("individual_owners", [])
+            )
+
+            # Store extracted data in state
+            updated_state = {
+                "owner_name": analysis.get("owner_name", "Unknown"),
+                "owner_type": analysis.get("owner_type", "unknown"),
+                "individual_owners": individual_owners,
+                "has_individual_owners": analysis.get("has_individual_owners", False)
+                and len(individual_owners) > 0,
+                "confidence": analysis.get("confidence", "low"),
+                "extracted_contacts": analysis.get("contacts", []),
+                "extracted_emails": analysis.get("emails", []),
+                "extracted_notes": analysis.get("notes", ""),
+                "property_shark_phones": property_shark_phones,
                 "current_step": "Analysis completed",
-                "next_steps": ["complete"],
+                # Next steps will be determined by conditional logic in the workflow
+                "next_steps": [],
             }
+
+            # If company name is available, add it to the state
+            if analysis.get("company_name"):
+                updated_state["company_name"] = analysis["company_name"]
+
+            return updated_state
 
         except Exception as e:
             logger.error(f"Analysis error: {str(e)}")
@@ -70,22 +101,22 @@ class AnalyzerNode:
             return {
                 "errors": [f"Analysis error: {str(e)}"],
                 "current_step": "Analysis failed",
-                "next_steps": ["complete"],
+                "next_steps": [],
             }
 
-    def _extract_data_with_llm(self, state: PropertyResearchState) -> Dict[str, Any]:
-        """Extract all needed data from available sources using LLM with structured output."""
-        logger.info("Using LLM to extract property data for spreadsheet")
+    def _analyze_property_data(self, state: PropertyResearchState) -> Dict[str, Any]:
+        """Analyze all property data in a single LLM call and return structured response."""
+        logger.info("Using LLM to analyze property data comprehensively")
 
         prompt = f"""
-        You are a real estate data analyst tasked with extracting information for a property spreadsheet.
+        You are a real estate data analyst tasked with extracting comprehensive information for a property.
         
         # PROPERTY INFORMATION
         Address: {state["address"]}
         
-        # DATA SOURCES (in order of reliability)
+        # DATA SOURCES
         
-        ## 1. PROPERTY SHARK DATA (Most Reliable)
+        ## 1. PROPERTY SHARK DATA
         {json.dumps(state.get("property_shark_ownership_data", {}), indent=2, default=str)}
         
         ## 2. PROPERTY DOCUMENTS FROM ACRIS
@@ -103,55 +134,60 @@ class AnalyzerNode:
         ## 6. PERSON SEARCH RESULTS (if available)
         {json.dumps(state.get("person_search_results", {}), indent=2, default=str)}
         
-        # TASK
-        Analyze all available data sources and extract the following information:
+        # COMPREHENSIVE ANALYSIS TASK
         
-        1. The most likely current legal owner of the property
-        2. Whether the owner is an LLC, corporation, or individual
-        3. Your confidence level in this determination
-        4. Up to 4 contact names associated with the property
-        5. Up to 6 phone numbers associated with the property or contacts
-        6. Up to 4 email addresses associated with the property or contacts
-        7. The primary phone number (the most reliable one)
-        8. Any observations or explanations about the data in the notes field
+        Analyze all available data sources and provide:
         
-        # PRIORITY RULES
-        - PropertyShark's "registered_owners" data is the most reliable source for ownership
-        - Recent deed documents from ACRIS are the next most reliable for ownership
+        1. PRIMARY OWNERSHIP INFORMATION
+           - The most likely current legal owner of the property
+           - Whether the owner is an LLC, corporation, or individual
+           - Your confidence level in this determination
+           - If the owner is an LLC or corporation, identify the company name
+        
+        2. INDIVIDUAL OWNERS/CONTACTS
+           - Identify all individual owners/contacts associated with this property from all sources
+           - For each individual owner/contact identified, provide:
+             * name: Their full name (do NOT include source, type, or any other annotations in the name)
+             * source: Where you found this person (PropertyShark, ACRIS, ZoLa, etc.)
+             * type: Their role (owner, manager, member, etc.)
+           - Determine if we have any individual owners identified (true/false)
+           - IMPORTANT: Keep the name field clean with ONLY the person's name
+        
+        3. CONTACT INFORMATION
+           - Contact names associated with the property (up to 4)
+           - Phone numbers associated with the property or contacts (up to 6)
+           - Email addresses associated with the property or contacts (up to 4)
+           - The primary phone number (the most reliable one)
+        
+        4. NOTES AND CONTEXT
+           - Provide any observations, explanations, or additional context about the data
+        
+        # IMPORTANT CONSIDERATIONS
+        
+        - PropertyShark and ACRIS are reliable sources for ownership information
         - PropertyShark's "real_owners" data is good for contact information
-        - Phone numbers should be formatted as (XXX) XXX-XXXX if possible
-        - If the owner is an LLC or corporation, list it as the company
-        - If the owner is an individual, leave the company field empty
-        
-        # CONFIDENCE DETERMINATION
-        - HIGH confidence: When PropertyShark data matches with ACRIS and/or ZoLa data
-        - MEDIUM confidence: When only PropertyShark data is available, or when there are minor discrepancies between sources
-        - LOW confidence: When sources conflict significantly or when limited data is available
-        
-        # IMPORTANT
-        Include any explanations, observations, or additional context in the notes field.
+        - Consider all sources when identifying individual owners
+        - Look for real people associated with LLCs or corporations
+        - Format phone numbers as (XXX) XXX-XXXX if possible
+        - HIGH confidence: When data matches across multiple sources
+        - MEDIUM confidence: When data is from reliable source but not confirmed by others
+        - LOW confidence: When sources conflict or limited data is available
+        - The goal is to identify all possible individual contacts for this property
         """
 
         # Create chain with structured output
-        chain = self.llm.with_structured_output(PropertyData)
+        chain = self.llm.with_structured_output(PropertyAnalysisResponse)
 
         try:
             # Get structured response from LLM
             result = chain.invoke(prompt)
-            logger.info(f"Successfully extracted data for {state['address']}")
+            logger.info(f"Successfully analyzed property data for {state['address']}")
 
-            # Convert to dictionary
-            extracted_data = result.dict()
-
-            # Ensure lists are properly initialized
-            extracted_data["contacts"] = extracted_data.get("contacts", [])
-            extracted_data["phones"] = extracted_data.get("phones", [])
-            extracted_data["emails"] = extracted_data.get("emails", [])
-
-            return extracted_data
+            # Convert to dictionary and return
+            return result.dict()
 
         except Exception as e:
-            logger.error(f"Error in LLM extraction: {str(e)}")
+            logger.error(f"Error in LLM property analysis: {str(e)}")
             # Fall back to minimal extraction
             return self._fallback_extraction(state)
 
@@ -167,6 +203,9 @@ class AnalyzerNode:
         phones = []
         emails = []
         primary_phone = ""
+        individual_owners = []
+        has_individual_owners = False
+        company_name = ""
         notes = "Data extracted using fallback method due to LLM extraction failure."
 
         # Try to get owner from PropertyShark
@@ -183,6 +222,10 @@ class AnalyzerNode:
                 owner_type = self._determine_owner_type(owner_name)
                 confidence = "medium"  # Default to medium if only PropertyShark data is available
 
+                # Set company name if it's an LLC or corporation
+                if owner_type.lower() in ["llc", "corporation"]:
+                    company_name = owner_name
+
         # Check ZoLa data
         zola_owner = state.get("zola_owner_name")
 
@@ -193,6 +236,46 @@ class AnalyzerNode:
                 if "entity_owner" in record and record["entity_owner"]:
                     acris_owner = record["entity_owner"]
                     break
+
+                # Try to extract individual owners from ACRIS
+                if "individual_owners" in record and record["individual_owners"]:
+                    idx = 0
+                    for ind_owner in record["individual_owners"]:
+                        name = ind_owner.get("name", "")
+                        if name:
+                            idx += 1
+                            # Store clean name and metadata separately
+                            individual_owners.append(
+                                {
+                                    "name": name,  # Store only the name
+                                    "source": "ACRIS",
+                                    "type": ind_owner.get("title", "owner"),
+                                    "order": idx,  # Store order as separate field
+                                }
+                            )
+                            has_individual_owners = True
+
+        # Extract individuals from PropertyShark if available
+        if isinstance(ps_data, dict) and "real_owners" in ps_data:
+            ps_idx = 0
+            for owner in ps_data["real_owners"]:
+                name = owner.get("name", "")
+                if name:
+                    ps_idx += 1
+                    # Store clean name and metadata separately
+                    individual_owners.append(
+                        {
+                            "name": name,  # Store only the name
+                            "source": "PropertyShark",
+                            "type": "real_owner",
+                            "order": ps_idx,  # Store order as separate field
+                        }
+                    )
+                    has_individual_owners = True
+
+                    # Add to contacts as well
+                    if name not in contacts:
+                        contacts.append(name)
 
         # Determine confidence based on data agreement
         if ps_owner:
@@ -213,11 +296,20 @@ class AnalyzerNode:
                 confidence = "medium"
             else:
                 confidence = "low"
+
+            # Set company name if it's an LLC or corporation
+            if owner_type.lower() in ["llc", "corporation"]:
+                company_name = owner_name
+
         elif zola_owner:
             # If we only have ZoLa data
             owner_name = zola_owner
             owner_type = self._determine_owner_type(owner_name)
             confidence = "low"
+
+            # Set company name if it's an LLC or corporation
+            if owner_type.lower() in ["llc", "corporation"]:
+                company_name = owner_name
 
         # Add explanation to notes
         if confidence == "high":
@@ -227,9 +319,6 @@ class AnalyzerNode:
         else:
             notes += " Limited or conflicting owner information available."
 
-        # Set company based on owner type
-        company = owner_name if owner_type.lower() in ["llc", "corporation"] else ""
-
         return {
             "owner_name": owner_name,
             "owner_type": owner_type,
@@ -238,7 +327,9 @@ class AnalyzerNode:
             "phones": phones,
             "emails": emails,
             "primary_phone": primary_phone,
-            "company": company,
+            "company_name": company_name,
+            "individual_owners": individual_owners,
+            "has_individual_owners": has_individual_owners,
             "notes": notes,
         }
 
@@ -286,73 +377,235 @@ class AnalyzerNode:
         else:
             return "individual"
 
-    def _save_to_spreadsheet(self, state: Dict[str, Any], extracted_data: Dict[str, Any]) -> None:
-        """Save property ownership data to Excel spreadsheet."""
-        # Create results directory if needed
-        results_dir = os.path.join(os.getcwd(), "results")
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
-            logger.info(f"Created results directory: {results_dir}")
+    def _extract_property_shark_phones(self, state: PropertyResearchState) -> List[Dict[str, Any]]:
+        """Extract phone numbers from PropertyShark data as one potential source."""
+        phone_data = []
 
-        excel_path = os.path.join(results_dir, "property_owners.xlsx")
-
-        # Define columns
-        columns = [
-            "Property Address",
-            "Contact 1",
-            "Contact 2",
-            "Contact 3",
-            "Contact 4",
-            "Company",
-            "Phone 1",
-            "Phone 2",
-            "Phone 3",
-            "Phone 4",
-            "Phone 5",
-            "Phone 6",
-            "Email 1",
-            "Email 2",
-            "Email 3",
-            "Email 4",
-            "Owner Type",
-            "Confidence",
-            "Notes",
-        ]
-
-        # Prepare data for spreadsheet
-        address = state["address"]
-        company = extracted_data.get("company", "")
-        if not company and extracted_data["owner_type"].lower() in ["llc", "corporation"]:
-            company = extracted_data["owner_name"]
-
-        contacts = (extracted_data["contacts"] + [""] * 4)[:4]
-        phones = (extracted_data["phones"] + [""] * 6)[:6]
-        emails = (extracted_data["emails"] + [""] * 4)[:4]
-        owner_type = extracted_data["owner_type"]
-        confidence = extracted_data["confidence"]
-        notes = extracted_data.get("notes", "")
-
-        # Create row data
-        new_row = (
-            [address] + contacts + [company] + phones + emails + [owner_type, confidence, notes]
-        )
-
-        # Load existing spreadsheet or create new one
         try:
-            if os.path.exists(excel_path):
-                df = pd.read_excel(excel_path)
-                # Skip if address already exists
-                if address in df["Property Address"].values:
-                    logger.info(f"Address '{address}' already exists in spreadsheet, skipping")
-                    return
-            else:
-                df = pd.DataFrame(columns=columns)
+            ps_data = state.get("property_shark_ownership_data", {})
 
-            # Add new row and save
-            df.loc[len(df)] = new_row
-            df.to_excel(excel_path, index=False)
-            logger.info(f"Saved property data to {excel_path}")
-            print(f"📊 Saved property data to spreadsheet: {excel_path}")
+            # Extract phone numbers from real_owners section
+            if isinstance(ps_data, dict) and "real_owners" in ps_data:
+                real_owners = ps_data["real_owners"]
+
+                for owner in real_owners:
+                    contact_name = owner.get("name", "Unknown")
+
+                    # Extract phones for this contact
+                    if "phones" in owner and owner["phones"]:
+                        for phone in owner["phones"]:
+                            phone_data.append(
+                                {
+                                    "number": phone,
+                                    "contact_name": contact_name,
+                                    "source": "PropertyShark",
+                                    "confidence": "medium",  # PropertyShark is just one source
+                                }
+                            )
+
+            logger.info(f"Extracted {len(phone_data)} phone numbers from PropertyShark")
+            return phone_data
 
         except Exception as e:
-            logger.error(f"Error saving spreadsheet: {e}")
+            logger.warning(f"Error extracting PropertyShark phones: {str(e)}")
+            return []
+
+    def _ensure_clean_individual_owners(
+        self, individual_owners: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Validate and clean individual owner names using LLM to ensure no annotations are present.
+
+        Args:
+            individual_owners: List of individual owner dictionaries
+
+        Returns:
+            Cleaned list of individual owners
+        """
+        if not individual_owners:
+            return []
+
+        cleaned_owners = []
+        names_to_clean = []
+
+        # First pass: identify names that need cleaning
+        for i, owner in enumerate(individual_owners):
+            if not isinstance(owner, dict) or "name" not in owner:
+                continue
+
+            name = owner["name"]
+
+            # Check if name likely has annotations
+            if "(" in name or "-" in name or ":" in name:
+                names_to_clean.append({"index": i, "original_name": name, "owner_data": owner})
+            else:
+                cleaned_owners.append(owner)
+
+        # If no names need cleaning, return the original list
+        if not names_to_clean:
+            return individual_owners
+
+        # Use LLM to clean names and extract metadata in batch
+        cleaned_data = self._clean_names_with_llm(names_to_clean)
+
+        # Add cleaned data to the final list
+        for item in cleaned_data:
+            cleaned_owners.append(item)
+
+        # Sort the cleaned owners to maintain original order
+        cleaned_owners.sort(key=lambda x: x.get("order", 999))
+
+        return cleaned_owners
+
+    def _clean_names_with_llm(self, names_to_clean: List[Dict]) -> List[Dict[str, Any]]:
+        """
+        Use LLM to clean names and extract metadata from annotated names.
+
+        Args:
+            names_to_clean: List of dictionaries containing names that need cleaning
+
+        Returns:
+            List of owner dictionaries with clean names and extracted metadata
+        """
+        if not names_to_clean:
+            return []
+
+        # Prepare the prompt for the LLM
+        prompt = """
+        You are an expert in data cleaning. I have a list of names with annotations that I need cleaned.
+        For each name, I need you to:
+        
+        1. Extract just the person's name without any annotations, numbers, or role information
+        2. Extract metadata like the person's role (owner, member, manager, etc.)
+        3. Extract the source of the information (ACRIS, PropertyShark, etc.)
+        
+        Here are the annotated names:
+        
+        """
+
+        for i, item in enumerate(names_to_clean):
+            prompt += f'{i + 1}. "{item["original_name"]}"\n'
+
+        prompt += """
+        Please provide a structured response in the following format:
+        
+        ```json
+        [
+          {
+            "original": "Annotated name as provided",
+            "clean_name": "Just the person's name",
+            "role": "Their role (if found)",
+            "source": "Information source (if found)",
+            "notes": "Any additional information"
+          },
+          ...
+        ]
+        ```
+        
+        Always preserve the original list order. If any information can't be determined, use "unknown" for that field.
+        """
+
+        try:
+            # Create a message for the LLM
+            messages = [
+                SystemMessage(
+                    content="You are a data cleaning assistant that extracts clean names and metadata from annotated text."
+                ),
+                HumanMessage(content=prompt),
+            ]
+
+            # Get response from the LLM
+            response = self.llm.invoke(messages)
+
+            # Extract JSON from the response text
+            json_text = ""
+            in_json = False
+
+            for line in response.content.split("\n"):
+                if line.strip() == "```json":
+                    in_json = True
+                    continue
+                elif line.strip() == "```" and in_json:
+                    break
+                elif in_json:
+                    json_text += line + "\n"
+
+            # Parse the JSON response
+            if json_text:
+                cleaned_data = json.loads(json_text)
+
+                # Match the cleaned data back to the original items and create owner dictionaries
+                result = []
+
+                for i, item in enumerate(names_to_clean):
+                    try:
+                        original_owner = item["owner_data"]
+                        cleaned_info = cleaned_data[i] if i < len(cleaned_data) else None
+
+                        if cleaned_info:
+                            # Create a new owner dictionary with the cleaned name
+                            clean_owner = original_owner.copy()
+
+                            # Update with cleaned data
+                            clean_owner["name"] = cleaned_info["clean_name"].strip()
+
+                            # Only update metadata if not already present
+                            if "role" in cleaned_info and cleaned_info["role"] != "unknown":
+                                if (
+                                    "type" not in clean_owner
+                                    or not clean_owner["type"]
+                                    or clean_owner["type"] == "unknown"
+                                ):
+                                    clean_owner["type"] = cleaned_info["role"]
+
+                            if "source" in cleaned_info and cleaned_info["source"] != "unknown":
+                                if "source" not in clean_owner or not clean_owner["source"]:
+                                    clean_owner["source"] = cleaned_info["source"]
+
+                            # Keep track of the original order
+                            clean_owner["order"] = item["index"]
+
+                            # Add to results
+                            result.append(clean_owner)
+
+                            # Log the cleaning
+                            logger.info(
+                                f"LLM cleaned name: '{item['original_name']}' -> '{clean_owner['name']}'"
+                            )
+                        else:
+                            # Fallback: add the original owner data
+                            original_owner["order"] = item["index"]
+                            result.append(original_owner)
+                    except Exception as e:
+                        logger.warning(f"Error processing cleaned data for item {i}: {str(e)}")
+                        # Fallback: add the original owner data
+                        original_owner = item["owner_data"].copy()
+                        original_owner["order"] = item["index"]
+                        result.append(original_owner)
+
+                return result
+            else:
+                logger.warning("Could not extract JSON from LLM response")
+        except Exception as e:
+            logger.error(f"Error using LLM to clean names: {str(e)}")
+
+        # Fallback: return the original data if LLM cleaning fails
+        fallback_result = []
+        for item in names_to_clean:
+            owner_data = item["owner_data"].copy()
+            owner_data["order"] = item["index"]
+
+            # Apply basic regex cleaning as a last resort
+            if "(" in owner_data["name"] or "-" in owner_data["name"]:
+                clean_name = re.sub(r"\s*\(\d+\)\s*-\s*[^()]+\([^()]+\)", "", owner_data["name"])
+                clean_name = re.sub(r"\s*\([^)]*\)", "", clean_name)
+                clean_name = re.sub(r"\s*-\s*[^-]*$", "", clean_name)
+                clean_name = clean_name.strip()
+
+                if clean_name != owner_data["name"]:
+                    logger.warning(f"Fallback cleaning: '{owner_data['name']}' -> '{clean_name}'")
+                    owner_data["name"] = clean_name
+
+            fallback_result.append(owner_data)
+
+        return fallback_result

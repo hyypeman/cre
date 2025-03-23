@@ -17,6 +17,8 @@ from .nodes import (
     OpenCorporatesNode,
     SkipGenieNode,
     TruePeopleSearchNode,
+    PhoneNumberRefinerNode,
+    FinalizeNode,
 )
 
 # Set up logging
@@ -52,7 +54,9 @@ class PropertyResearchGraph:
         self.opencorporates_node = OpenCorporatesNode()
         self.skipgenie_node = SkipGenieNode()
         self.true_people_search_node = TruePeopleSearchNode()
+        self.phone_number_refiner_node = PhoneNumberRefinerNode()
         self.analyzer = AnalyzerNode()
+        self.finalizer = FinalizeNode()
 
     def _build_workflow(self):
         """Configure the state graph workflow"""
@@ -65,10 +69,12 @@ class PropertyResearchGraph:
         self.workflow.add_node("acris_search", self.acris_node.run)
         self.workflow.add_node("process_documents", self.document_processor.run)
         self.workflow.add_node("property_shark_search", self.property_shark_node.run)
+        self.workflow.add_node("analyze_owner", self.analyzer.run)
         self.workflow.add_node("search_opencorporates", self.opencorporates_node.run)
         self.workflow.add_node("search_skipgenie", self.skipgenie_node.run)
         self.workflow.add_node("search_true_people", self.true_people_search_node.run)
-        self.workflow.add_node("analyze_owner", self.analyzer.run)
+        self.workflow.add_node("refine_phone_numbers", self.phone_number_refiner_node.run)
+        self.workflow.add_node("finalize", self.finalizer.run)
 
         # Phase 1: Initial data collection
         self.workflow.add_edge(START, "initialize")
@@ -90,17 +96,25 @@ class PropertyResearchGraph:
         self.workflow.add_edge("property_shark_search", "analyze_owner")
         self.workflow.add_edge("process_documents", "analyze_owner")
 
-        # Phase 2: LLC resolution and people search
+        # Phase 2: Conditional paths based on owner analysis
+        # If we have individual owners, go directly to people search
+        # If we only have an LLC owner with no individuals, search OpenCorporates first
         self.workflow.add_conditional_edges(
             "analyze_owner",
-            lambda state: state.get("owner_type", "").lower() == "llc",
+            lambda state: not state.get("has_individual_owners", False)
+            and state.get("owner_type", "").lower() == "llc",
             {True: "search_opencorporates", False: "search_skipgenie"},
         )
 
-        # Phase 3: People search and completion
+        # Phase 3: Contact information search
+        # Only go to SkipGenie after OpenCorporates if we had to look up LLC
         self.workflow.add_edge("search_opencorporates", "search_skipgenie")
         self.workflow.add_edge("search_skipgenie", "search_true_people")
-        self.workflow.add_edge("search_true_people", END)
+        self.workflow.add_edge("search_true_people", "refine_phone_numbers")
+
+        # Phase 4: Phone refinement and finalization
+        self.workflow.add_edge("refine_phone_numbers", "finalize")
+        self.workflow.add_edge("finalize", END)
 
     def _has_documents(self, state: PropertyResearchState) -> bool:
         """Check if ACRIS returned documents that need processing."""
@@ -153,6 +167,12 @@ class PropertyResearchGraph:
             acris_property_records=None,
             property_ownership_records=None,
             property_shark_ownership_data=None,
+            property_shark_phones=None,
+            skipgenie_phones=None,
+            truepeoplesearch_phones=None,
+            refined_phone_numbers=None,
+            individual_owners=None,
+            has_individual_owners=False,
             company_registry_data=None,
             person_search_results=None,
             owner_name=None,
@@ -227,6 +247,7 @@ def main():
 
     # Save workflow visualization
     graph.visualize()
+    print("📊 Workflow diagram saved to workflow_diagram.png")
 
     # Process multiple addresses
     addresses = []
@@ -261,8 +282,29 @@ def main():
         print("\nOwnership Information:")
         print(f"Owner Name: {result.get('owner_name', 'Unknown')}")
         print(f"Owner Type: {result.get('owner_type', 'Unknown')}")
-        print(f"Contact Number: {result.get('contact_number', 'Not available')}")
-        print(f"Address: {result.get('address', 'Unknown')}")
+
+        # Print individual owners
+        individual_owners = result.get("individual_owners", [])
+        if individual_owners:
+            print("\nIndividual Owners/Contacts:")
+            for owner in individual_owners:
+                print(f"- {owner['name']} ({owner['source']})")
+
+        # Print phone number information with confidence levels
+        print("\nContact Information:")
+        print(f"Primary Contact Number: {result.get('contact_number', 'Not available')}")
+
+        # Print all refined phone numbers if available
+        refined_phones = result.get("refined_phone_numbers", [])
+        if refined_phones:
+            print("\nAll Phone Numbers (by confidence):")
+            for i, phone in enumerate(refined_phones, 1):
+                confidence = phone.get("confidence", "unknown")
+                sources = ", ".join(phone.get("sources", []))
+                contact = phone.get("contact_name", "Unknown contact")
+                print(f"{i}. {phone['number']} - {confidence} confidence ({sources}) - {contact}")
+
+        print(f"\nAddress: {result.get('address', 'Unknown')}")
 
     print(f"\nProcessed {len(results)} addresses")
     return results

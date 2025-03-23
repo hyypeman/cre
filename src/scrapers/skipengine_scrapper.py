@@ -4,7 +4,7 @@ import traceback
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from services.client import Client
+from src.scrapers.services.client import Client
 
 # Load environment variables
 load_dotenv()
@@ -84,15 +84,9 @@ def parser_html(html: str) -> list:
                 for i in range(0, len(spans) - 1, 2):
                     phone_text = spans[i].get_text(strip=True)
                     desc_text = spans[i + 1].get_text(strip=True)
-                    phones.append({
-                        "phone": phone_text,
-                        "description": desc_text
-                    })
+                    phones.append({"phone": phone_text, "description": desc_text})
 
-            results.append({
-                "name": name.strip(),
-                "phones": phones
-            })
+            results.append({"name": name.strip(), "phones": phones})
 
     return results
 
