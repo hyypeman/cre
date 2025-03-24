@@ -84,6 +84,17 @@ class PropertyResearchState(InputState):
     - relatives: Family members
     - associates: Business associates
     """
+    
+    # Phone verification results
+    phone_analysis: Optional[Dict[str, List[Any]]]
+    """
+    Results of phone number validation:
+    - valid_phones: List of dictionaries containing validated phone information:
+      - number: The original phone number
+      - formatted: The formatted version (national format)
+      - country_code: The country code for the phone number
+    - invalid_phones: List of phone numbers that failed validation
+    """
 
     # Extracted owner information - consolidated from all sources
     owner_name: Optional[str]

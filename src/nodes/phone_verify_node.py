@@ -1,10 +1,10 @@
 import logging
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Optional, Any
 from ..state import PropertyResearchState
 from ..utils.twilio import verify_phone_number
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
 
 class TwilioNode:
     """Node for analyzing phone numbers using Twilio."""
@@ -15,79 +15,32 @@ class TwilioNode:
 
     def run(self, state: PropertyResearchState) -> dict:
         """Analyze and validate phone numbers from property research state."""
-        logger.info("📱 Analyzing and validating phone numbers")
-        print("📱 Analyzing and validating phone numbers")
+        logger.info("📱 Analyzing phone numbers")
         
         try:
-            # Extract all phone numbers from state
-            all_phones = self._extract_all_phones(state)
+            all_phones = self._extract_phones(state)
             
             if not all_phones:
-                logger.info("No phone numbers found to analyze")
                 return {
-                    "phone_verification": None,
-                    "phone_number_valid": False,
-                    "phone_analysis": {
-                        "valid_phones": [],
-                        "invalid_phones": [],
-                        "primary_phone": None
-                    },
-                    "current_step": "Twilio verification skipped - no phone numbers"
+                    "phone_analysis": {"valid_phones": [], "invalid_phones": []}
                 }
             
-            # Validate phone numbers
             validation_results = self._validate_phones(all_phones)
             
-            # Determine primary phone
-            primary_phone = self._determine_primary_phone(validation_results, state)
-            
-            # Log the primary number status
-            if primary_phone:
-                logger.info(f"✅ Primary phone identified: {primary_phone.get('formatted', 'unknown')}")
-                print(f"✅ Primary phone identified: {primary_phone.get('formatted', 'unknown')}")
-            else:
-                logger.info("❌ No valid primary phone number identified")
-                print("❌ No valid primary phone number identified")
-            
-            # Update state with validation results
             return {
-                "phone_verification": primary_phone,
-                "phone_number_valid": primary_phone is not None,
-                "phone_number_formatted": primary_phone.get("formatted", "") if primary_phone else "",
-                "contact_number": primary_phone.get("formatted", state.get("contact_number", "Not available")) if primary_phone else state.get("contact_number", "Not available"),
-                "phone_analysis": {
-                    "valid_phones": validation_results["valid"],
-                    "invalid_phones": validation_results["invalid"],
-                    "primary_phone": primary_phone
-                },
-                "current_step": "Twilio verification completed"
+                "phone_analysis": validation_results
             }
             
         except Exception as e:
-            error_msg = f"Twilio verification error: {str(e)}"
-            logger.error(error_msg)
-            logger.exception("Detailed error:")
-            
+            logger.error(f"Twilio error: {str(e)}")
             return {
-                "errors": [error_msg],
-                "phone_verification": {"status": "error", "valid": False},
-                "phone_number_valid": False,
-                "phone_analysis": {
-                    "valid_phones": [],
-                    "invalid_phones": [],
-                    "primary_phone": None
-                },
-                "current_step": "Twilio verification failed"
+                "errors": [f"Twilio error: {str(e)}"],
+                "phone_analysis": {"valid_phones": [], "invalid_phones": []}
             }
     
-    def _extract_all_phones(self, state: PropertyResearchState) -> List[str]:
+    def _extract_phones(self, state: PropertyResearchState) -> List[str]:
         """Extract all phone numbers from various data sources in the state."""
         all_phones = set()
-        
-        # First check the contact_number from state (already determined primary phone)
-        contact_number = state.get("contact_number")
-        if contact_number and contact_number != "Not available":
-            all_phones.add(contact_number)
         
         # Extract from PropertyShark data
         ps_data = state.get("property_shark_ownership_data", {})
@@ -114,102 +67,35 @@ class TwilioNode:
                 if phone:
                     all_phones.add(phone)
         
-        # Clean phone numbers
-        cleaned_phones = [self._clean_phone_number(phone) for phone in all_phones if phone]
-        return [phone for phone in cleaned_phones if phone]  # Remove empty strings
-    
-    def _clean_phone_number(self, phone: str) -> str:
-        """Clean and format phone numbers."""
-        # If it's already a string like "Not available", return empty string
-        if not phone or phone == "Not available":
-            return ""
-            
-        # Remove non-digit characters
-        digits_only = ''.join(filter(str.isdigit, phone))
-        
-        # Format US numbers as needed
-        if len(digits_only) == 10:
-            return f"+1{digits_only}"
-        elif len(digits_only) == 11 and digits_only.startswith('1'):
-            return f"+{digits_only}"
-        elif len(digits_only) > 8:  # Assume it's a valid number with country code
-            return f"+{digits_only}"
-        
-        return ""  # Return empty string for invalid numbers
+        # Filter out empty or None values
+        return [phone for phone in all_phones if phone]
     
     def _validate_phones(self, phone_numbers: List[str]) -> Dict[str, List]:
         """Validate phone numbers using Twilio API."""
         valid_phones = []
         invalid_phones = []
         
-        try:
-            # Handle each phone number validation sequentially instead of using asyncio.gather
-            for phone in phone_numbers:
+        for phone in phone_numbers:
+            try:
+                async def run_verification():
+                    return await verify_phone_number(phone)
+                
                 try:
-                    # Use a synchronous approach by creating a simple synchronous wrapper
-                    import asyncio
-                    
-                    # Create a coroutine and run it synchronously
-                    async def run_verification():
-                        return await verify_phone_number(phone)
-                    
-                    # Use asyncio.run for Python 3.7+ which handles creating/closing loops properly
-                    # or fall back to a safer method for older Python versions
-                    try:
-                        result = asyncio.run(run_verification())
-                    except RuntimeError:  # If we're already in an event loop
-                        # Alternative method that works in an existing event loop
-                        current_loop = asyncio.get_event_loop()
-                        result = current_loop.run_until_complete(run_verification())
-                    
-                    if result.get("valid", False):
-                        valid_phones.append({
-                            "number": phone,
-                            "formatted": result.get("national_format", phone),
-                            "country_code": result.get("country_code", "unknown")
-                        })
-                    else:
-                        invalid_phones.append(phone)
-                except Exception as e:
-                    logger.error(f"Error validating {phone}: {str(e)}")
+                    result = asyncio.run(run_verification())
+                except RuntimeError:
+                    current_loop = asyncio.get_event_loop()
+                    result = current_loop.run_until_complete(run_verification())
+                
+                if result.get("valid", False):
+                    valid_phones.append({
+                        "number": phone,
+                        "formatted": result.get("national_format", phone),
+                        "country_code": result.get("country_code", "unknown")
+                    })
+                else:
                     invalid_phones.append(phone)
-                    
-            return {
-                "valid": valid_phones,
-                "invalid": invalid_phones
-            }
-        
-        except Exception as e:
-            logger.error(f"Error in phone validation process: {str(e)}")
-            # Return empty results on complete failure
-            return {
-                "valid": [],
-                "invalid": phone_numbers
-            }
-    
-    def _determine_primary_phone(self, validation_results: Dict[str, List], state: PropertyResearchState) -> Dict[str, Any]:
-        """Determine the primary (most reliable) phone number."""
-        valid_phones = validation_results["valid"]
-        
-        if not valid_phones:
-            return None
-        
-        # If we only have one valid phone, that's our primary
-        if len(valid_phones) == 1:
-            return valid_phones[0]
-        
-        # First, check if the contact_number from analyzer is among valid phones
-        contact_number = state.get("contact_number")
-        if contact_number and contact_number != "Not available":
-            contact_number_clean = self._clean_phone_number(contact_number)
-            for phone in valid_phones:
-                if phone["number"] == contact_number_clean:
-                    return phone
-        
-        # Prioritize US phone numbers
-        us_phones = [p for p in valid_phones if p.get("country_code") == "US"]
-        if us_phones:
-            return us_phones[0]
-        
-        # If no prioritization criteria met, return the first valid phone
-        return valid_phones[0]
+            except Exception as e:
+                logger.error(f"Error validating {phone}: {str(e)}")
+                invalid_phones.append(phone)
+                
+        return {"valid": valid_phones, "invalid": invalid_phones}
