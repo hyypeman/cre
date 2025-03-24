@@ -1,7 +1,6 @@
 import logging
 import re
 import json
-import asyncio
 from typing import Dict, Any, List, Set, Optional
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_openai import ChatOpenAI
@@ -361,39 +360,33 @@ class PhoneNumberRefinerNode:
     def _verify_phone_numbers(self, phone_numbers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Simple function to verify phone numbers using Twilio."""
         verified_numbers = []
-
+        
         for phone in phone_numbers:
             phone_number = phone.get("number", "")
             if not phone_number:
+                # For phones without a number, just add them to results unchanged
+                verified_numbers.append(phone.copy())
                 continue
-
+                
             try:
-                # Create a simple async wrapper for the verification
-                async def verify():
-                    return await verify_phone_number(phone_number)
-
-                # Run the verification
-                try:
-                    result = asyncio.run(verify())
-                except RuntimeError:
-                    # If already in an event loop
-                    loop = asyncio.get_event_loop()
-                    result = loop.run_until_complete(verify())
-
-                # Add verification info to the phone data
+                # Use the synchronous version of the verification function
+                result = verify_phone_number(phone_number)
+                
+                # Create a new dict with verification info
                 verified_phone = phone.copy()
                 verified_phone["verified"] = result.get("valid", False)
-
+                
                 if result.get("valid", False):
                     verified_phone["formatted"] = result.get("national_format", phone_number)
                     logger.info(f"✅ Verified: {phone_number}")
                 else:
                     logger.info(f"❌ Invalid: {phone_number}")
-
+                    
                 verified_numbers.append(verified_phone)
-
+                
             except Exception as e:
                 logger.error(f"Error verifying {phone_number}: {str(e)}")
-                verified_numbers.append(phone)  # Keep the original data
-
+                # Keep the original data
+                verified_numbers.append(phone.copy())
+        
         return verified_numbers

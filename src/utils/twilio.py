@@ -5,7 +5,7 @@ account_sid = os.environ["TWILIO_ACCOUNT_SID"]
 auth_token = os.environ["TWILIO_AUTH_TOKEN"]
 
 
-async def verify_phone_number(phone_number: str):
+def verify_phone_number(phone_number: str):
     """Verify a phone number."""
     try:
         client = Client(account_sid, auth_token)
