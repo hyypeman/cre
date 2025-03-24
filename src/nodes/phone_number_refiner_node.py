@@ -1,10 +1,12 @@
 import logging
 import re
 import json
+import asyncio
 from typing import Dict, Any, List, Set, Optional
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from ..state import PropertyResearchState
+from ..utils.twilio import verify_phone_number
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,6 @@ class PhoneNumberRefinerNode:
     def run(self, state: PropertyResearchState) -> dict:
         """
         Refine phone numbers by comparing data from multiple sources using LLM.
-
         This node takes phone numbers from PropertyShark, SkipGenie, and TruePeopleSearch
         and uses an LLM to compare them and determine the most reliable numbers.
         """
@@ -72,13 +73,20 @@ class PhoneNumberRefinerNode:
                 individual_owners,
             )
 
+            # Verify the refined phone numbers using Twilio
+            refined_phones = analysis_result.get("refined_phone_numbers", [])
+            verified_phones = self._verify_phone_numbers(refined_phones)
+
+            # Update the analysis result with verified phones
+            analysis_result["refined_phone_numbers"] = verified_phones
+
             # Return the analyzed results with guaranteed non-None values
             return {
                 "refined_phone_data": analysis_result.get("phone_data_by_contact", {}),
-                "refined_phone_numbers": analysis_result.get("refined_phone_numbers", []),
+                "refined_phone_numbers": verified_phones,
                 "contact_number": analysis_result.get("primary_phone", ""),
                 "refinement_notes": analysis_result.get("notes", ""),
-                "current_step": "Phone number refinement completed",
+                "current_step": "Phone number refinement and verification completed",
                 "next_steps": ["finalize"],
             }
 
@@ -349,3 +357,43 @@ class PhoneNumberRefinerNode:
         elif len(normalized_number) == 11 and normalized_number[0] == "1":
             return f"({normalized_number[1:4]}) {normalized_number[4:7]}-{normalized_number[7:]}"
         return None
+
+    def _verify_phone_numbers(self, phone_numbers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Simple function to verify phone numbers using Twilio."""
+        verified_numbers = []
+
+        for phone in phone_numbers:
+            phone_number = phone.get("number", "")
+            if not phone_number:
+                continue
+
+            try:
+                # Create a simple async wrapper for the verification
+                async def verify():
+                    return await verify_phone_number(phone_number)
+
+                # Run the verification
+                try:
+                    result = asyncio.run(verify())
+                except RuntimeError:
+                    # If already in an event loop
+                    loop = asyncio.get_event_loop()
+                    result = loop.run_until_complete(verify())
+
+                # Add verification info to the phone data
+                verified_phone = phone.copy()
+                verified_phone["verified"] = result.get("valid", False)
+
+                if result.get("valid", False):
+                    verified_phone["formatted"] = result.get("national_format", phone_number)
+                    logger.info(f"✅ Verified: {phone_number}")
+                else:
+                    logger.info(f"❌ Invalid: {phone_number}")
+
+                verified_numbers.append(verified_phone)
+
+            except Exception as e:
+                logger.error(f"Error verifying {phone_number}: {str(e)}")
+                verified_numbers.append(phone)  # Keep the original data
+
+        return verified_numbers
