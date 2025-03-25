@@ -49,3 +49,4 @@ httpx>=0.25.0  # For async HTTP requests
 asyncio>=3.4.3  # For asynchronous programming
 uuid>=1.30  # For generating unique identifiers
 starlette>=0.27.0  # FastAPI dependency
+twilio==9.5.1
