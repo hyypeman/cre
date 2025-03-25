@@ -3,8 +3,6 @@ import nodriver as uc
 import time
 import json
 import re
-import pandas as pd
-import random
 import os
 import capsolver
 from typing import Dict, Any, List, Optional, Union
@@ -443,8 +441,19 @@ async def run_search(
         Exception: If browser automation fails
     """
     try:
+        # Get optional settings from environment
+        headless = os.getenv("HEADLESS", "false").lower() == "true"
+        browser_args = []
+        if headless:
+            browser_args.append("--headless=new")
+            # If we use headless browser, we need to set browser agent manually,
+            # otherwise we get detected. Headless mode automatically
+            # append "Headless" into browser agent string
+            user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+            browser_args.append(f'--user-agent={user_agent}')
+        
         # Start a browser instance
-        browser = await uc.start()
+        browser = await uc.start(browser_args=browser_args)
         
         # Search does not work when browser is not maximized
         await browser.main_tab.maximize()
