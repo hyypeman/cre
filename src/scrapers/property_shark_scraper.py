@@ -430,7 +430,7 @@ def get_browser_context(playwright, headless=False):
     return browser, context
 
 
-def search_shark(address: str) -> dict:
+def search_shark(address: str | list) -> dict:
     """
     Searches the NYC ACRIS database for property information using the SHARK system.
 
@@ -467,19 +467,31 @@ def search_shark(address: str) -> dict:
                 print("Something went wrong in login process")
                 return {}
 
-            # Execute the property search using the provided address.
-            if not search(address, page):
-                print("Something went wrong in search process")
-                return {}
+            # Initialize the result dictionary
+            result = {}
 
-            # Parse the property details from the current page.
-            property_owner_data = parse_details(page)
-            if not property_owner_data:
-                print("Something went wrong in parsing details")
-                return {}
+            # Convert single address to a list for uniform processing
+            addresses = [address] if isinstance(address, str) else address
 
-            # Return the successfully parsed property owner data.
-            return property_owner_data
+            for addr in addresses:
+                # Execute the property search using the current address.
+                if not search(addr, page):
+                    print(f"Something went wrong in search process for address: {addr}")
+                    result[addr] = {}
+                    continue
+
+                # Parse the property details from the current page.
+                property_owner_data = parse_details(page)
+                if not property_owner_data:
+                    print(f"Something went wrong in parsing details for address: {addr}")
+                    result[addr] = {}
+                    continue
+
+                # Store the successfully parsed property owner data.
+                result[addr] = property_owner_data
+
+            # Return the result dictionary
+            return result
 
         except Exception as e:
             # Log any exceptions that occur during the process for debugging purposes.
@@ -492,7 +504,7 @@ def search_shark(address: str) -> dict:
 
 
 if __name__ == "__main__":
-    test_address = "19 W 34th Street, New York, NY"
+    test_address = ["19 W 34th Street, New York, NY", "19 W 34th Street, New York, NY"]
     results = search_shark(test_address)
     print(f"SHARK results for {test_address}:")
     print(results)
