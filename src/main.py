@@ -19,6 +19,7 @@ from .nodes import (
     TruePeopleSearchNode,
     PhoneNumberRefinerNode,
     FinalizeNode,
+    ReonomyNode,
 )
 
 # Set up logging
@@ -48,6 +49,7 @@ class PropertyResearchGraph:
         """Initialize all workflow nodes"""
         self.initializer = InitializerNode()
         self.zola_node = ZolaNode()
+        self.reonomy_node = ReonomyNode()
         self.acris_node = AcrisNode()
         self.document_processor = DocumentProcessorNode()
         self.property_shark_node = PropertySharkNode()
@@ -66,6 +68,7 @@ class PropertyResearchGraph:
         # Add nodes
         self.workflow.add_node("initialize", self.initializer.run)
         self.workflow.add_node("zola_search", self.zola_node.run)
+        self.workflow.add_node("reonomy_search", self.reonomy_node.run)
         self.workflow.add_node("acris_search", self.acris_node.run)
         self.workflow.add_node("process_documents", self.document_processor.run)
         self.workflow.add_node("property_shark_search", self.property_shark_node.run)
@@ -81,6 +84,7 @@ class PropertyResearchGraph:
 
         # Run data collection in parallel
         self.workflow.add_edge("initialize", "zola_search")
+        self.workflow.add_edge("initialize", "reonomy_search")
         self.workflow.add_edge("initialize", "acris_search")
         self.workflow.add_edge("initialize", "property_shark_search")
 

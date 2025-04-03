@@ -28,7 +28,7 @@ def is_logged(page: Page) -> bool:
         bool: True if logged in, False otherwise.
 
     Best Practices:
-    - Avoid using fixed sleep times (`time.sleep(5)`) where possible. Instead, rely on Playwright’s built-in `wait_for_load_state()`.
+    - Avoid using fixed sleep times (`time.sleep(5)`) where possible. Instead, rely on Playwright's built-in `wait_for_load_state()`.
     - Store authentication data securely if handling sensitive credentials.
     - Consider catching and handling potential exceptions during navigation.
     """
@@ -262,7 +262,7 @@ def search_reonomy(address: str | list) -> dict:
         address (str): The property address to search for.
 
     Returns:
-        dict: A dictionary summarizing the property information from ACRIS,
+        dict: A dictionary summarizing the property owner information from Reonomy,
               or an empty dictionary if an error occurs during the process.
     """
     # Retrieve optional configuration settings from environment variables.
