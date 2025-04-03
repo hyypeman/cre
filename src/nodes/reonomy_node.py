@@ -1,6 +1,6 @@
 import logging
 from ..state import PropertyResearchState
-from ..scrapers import reonomy_scrapper
+from ..scrapers import search_reonomy
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class ReonomyNode:
 
         try:
             # Call the search_reonomy function with the address
-            reonomy_data = reonomy_scrapper(state["address"])
+            reonomy_data = search_reonomy(state["address"])
 
             return {
                 "reonomy_address_data": reonomy_data,

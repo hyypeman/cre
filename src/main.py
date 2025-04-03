@@ -97,6 +97,7 @@ class PropertyResearchGraph:
 
         # Connect data sources to analyzer
         self.workflow.add_edge("zola_search", "analyze_owner")
+        self.workflow.add_edge("reonomy_search", "analyze_owner")
         self.workflow.add_edge("property_shark_search", "analyze_owner")
         self.workflow.add_edge("process_documents", "analyze_owner")
 
