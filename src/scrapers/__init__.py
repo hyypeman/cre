@@ -9,6 +9,7 @@ This package contains scrapers for various property data sources:
 - OpenCorporates: Company information for LLC owners
 - SkipEngine: Person and contact lookup service
 - TruePeopleSearch: People finder service for contact information
+- Reonomy: Property ownership information
 """
 
 from .zola_scraper import lookup_zola_owner
@@ -18,9 +19,11 @@ from .property_shark_scraper import search_shark
 from .opencorporates_scraper import search_opencorporate
 from .skipengine_scrapper import search_skipengine
 from .truepeoplesearch_scraper import search_truepeoplesearch
+from .reonomy_scrapper import search_reonomy
 
 __all__ = [
     "lookup_zola_owner",
+    "search_reonomy",
     "search_acris",
     "extract_text_from_pdf",
     "search_shark",

@@ -31,6 +31,16 @@ class PropertyResearchState(InputState):
     zola_owner_name: Annotated[Optional[str], lambda x, y: x or y]
     """Owner name from NYC's Zoning & Land Use database (can be individual or company)"""
 
+    reonomy_address_data: Optional[Dict[str, Dict[str, str]]]
+    """
+    Owner data from Reonomy:
+    - address1: Dictionary with owner information
+      - name: Owner's name
+      - address: Owner's address
+    - address2: Dictionary with owner information
+      ...
+    """
+
     # ACRIS data - property documents and information
     acris_property_records: Optional[Dict[str, Any]]
     """
