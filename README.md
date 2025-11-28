@@ -306,3 +306,8 @@ Contributions to the Property Research System are welcome! Please feel free to s
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+### Find me elsewhere
+
+🎙 Professional & AI content (LinkedIn): https://www.linkedin.com/in/skhanna3  
+📸 NYC lifestyle & fitness journey (Instagram): https://instagram.com/shashank.khanna
