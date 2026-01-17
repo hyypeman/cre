@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, validator
 from motor.motor_asyncio import AsyncIOMotorClient
 from src.main import PropertyResearchGraph
 from src.utils.twilio import verify_phone_number
+from src.utils.send_email import send_email
 
 # Configure logging
 logging.basicConfig(
@@ -68,6 +69,7 @@ class JobStatus(str, Enum):
 
 class AddressRequest(BaseModel):
     addresses: List[str] = Field(..., min_items=1, max_items=MAX_ADDRESSES)
+    email: Optional[str] = Field(None, description="The email address of the sender")
 
     @validator("addresses")
     def validate_addresses(cls, addresses):
@@ -169,13 +171,15 @@ async def process_address(job_id: str, address: str, index: int):
     await save_job_to_mongodb(job)
 
 
-async def process_addresses(job_id: str, addresses: List[str]):
+async def process_addresses(job_id: str, addresses: List[str], email: str):
     """Process multiple addresses sequentially with a delay between each."""
     try:
         for i, address in enumerate(addresses):
             await process_address(job_id, address, i)
             if i < len(addresses) - 1:  # Don't delay after the last address
                 await asyncio.sleep(PROCESSING_DELAY)
+        if email:
+            await send_email(recipient_email=email)
     except Exception as e:
         logger.error(f"Error in background processing: {e}")
         job = jobs[job_id]
@@ -211,7 +215,7 @@ async def start_research(request: AddressRequest, background_tasks: BackgroundTa
     await save_job_to_mongodb(job)
 
     # Start background processing
-    background_tasks.add_task(process_addresses, job_id, request.addresses)
+    background_tasks.add_task(process_addresses, job_id, request.addresses, request.email)
 
     return job
 
