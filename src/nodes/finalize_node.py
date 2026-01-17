@@ -2,8 +2,10 @@ import logging
 import os
 import pandas as pd
 from typing import Dict, Any, List, Optional
+from io import BytesIO
 
 from ..state import PropertyResearchState
+from ..utils.s3 import upload_fileobj, file_exists, download_fileobj
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,9 @@ class FinalizeNode:
         This node runs after all data collection (including SkipGenie and TruePeopleSearch)
         is complete, ensuring that the spreadsheet contains the most comprehensive
         contact information available.
+        
+        If ENVIRONMENT=production, the data will be uploaded to S3.
+        Otherwise, it will be saved to the local filesystem.
         """
         logger.info("🏁 Finalizing property research and saving complete results")
         print("🏁 Finalizing property research and saving complete results")
@@ -30,9 +35,18 @@ class FinalizeNode:
             # Save complete data to spreadsheet
             self._save_to_spreadsheet(state)
 
-            # Return minimal state update
+            # Determine storage location from result
+            if "excel_s3_path" in state:
+                storage_location = f"S3: {state['excel_s3_path']}"
+            else:
+                results_dir = os.path.join(os.getcwd(), "results")
+                excel_path = os.path.join(results_dir, "property_owners.xlsx")
+                storage_location = f"Local: {excel_path}"
+
+            # Return state update with storage information
             return {
                 "current_step": "Finalization completed",
+                "storage_location": storage_location,
                 "next_steps": [],
             }
 
@@ -52,14 +66,33 @@ class FinalizeNode:
         Incorporates all data from the property research workflow, including:
         - Basic property and owner information from Analyzer
         - Refined contact information from PhoneNumberRefiner
-        """
-        # Create results directory if needed
-        results_dir = os.path.join(os.getcwd(), "results")
-        if not os.path.exists(results_dir):
-            os.makedirs(results_dir)
-            logger.info(f"Created results directory: {results_dir}")
 
-        excel_path = os.path.join(results_dir, "property_owners.xlsx")
+        If running in production (ENVIRONMENT=production), data is uploaded to S3.
+        Otherwise, data is saved to the local filesystem.
+        """
+        # Determine environment and storage method
+        environment = os.environ.get("ENVIRONMENT", "development").lower()
+        is_production = environment == "production"
+        
+        # Set the filename and path
+        filename = "property_owners.xlsx"
+        
+        if not is_production:
+            # Save to local filesystem
+            # Create results directory if needed
+            results_dir = os.path.join(os.getcwd(), "results")
+            if not os.path.exists(results_dir):
+                os.makedirs(results_dir)
+                logger.info(f"Created results directory: {results_dir}")
+
+            excel_path = os.path.join(results_dir, filename)
+        else:
+            # For S3, we'll just need the filename initially
+            excel_path = filename
+            
+        # Get S3 configuration for production environment
+        s3_bucket = os.environ.get("S3_BUCKET_NAME")
+        s3_key_prefix = os.environ.get("S3_KEY_PREFIX", "property_research")
 
         # Define columns
         columns = [
@@ -222,15 +255,81 @@ class FinalizeNode:
                 else:
                     # Add new row
                     df.loc[len(df)] = new_row
+            elif is_production and s3_bucket:
+                # Try to load from S3 if the file exists
+                s3_key = f"{s3_key_prefix.rstrip('/')}/{filename}"
+                
+                if file_exists(s3_bucket, s3_key):
+                    # File exists, download it
+                    excel_buffer = BytesIO()
+                    if download_fileobj(s3_bucket, s3_key, excel_buffer):
+                        excel_buffer.seek(0)
+                        
+                        # Load DataFrame from the downloaded file
+                        df = pd.read_excel(excel_buffer)
+                        
+                        # Check if columns match
+                        if list(df.columns) != columns:
+                            logger.warning("S3 spreadsheet columns don't match expected format, recreating")
+                            df = pd.DataFrame(columns=columns)
+                        
+                        # Update or add row based on address
+                        if address in df["Property Address"].values:
+                            logger.info(f"Address '{address}' already exists in S3 spreadsheet, updating entry")
+                            df.loc[df["Property Address"] == address] = new_row
+                        else:
+                            df.loc[len(df)] = new_row
+                    else:
+                        # Download failed, create new DataFrame
+                        logger.warning(f"Failed to download existing spreadsheet from S3, creating new one")
+                        df = pd.DataFrame(columns=columns)
+                        df.loc[0] = new_row
+                else:
+                    # File doesn't exist, create new DataFrame
+                    logger.info(f"No existing spreadsheet found in S3, creating new one")
+                    df = pd.DataFrame(columns=columns)
+                    df.loc[0] = new_row
             else:
                 # Create new spreadsheet
                 df = pd.DataFrame(columns=columns)
                 df.loc[0] = new_row
-
+                
             # Save spreadsheet
-            df.to_excel(excel_path, index=False)
-            logger.info(f"Saved property data to {excel_path}")
-            print(f"📊 Saved complete property data to spreadsheet: {excel_path}")
+            if not is_production:
+                # Save to local filesystem
+                df.to_excel(excel_path, index=False)
+                logger.info(f"Saved property data to {excel_path}")
+                print(f"📊 Saved complete property data to spreadsheet: {excel_path}")
+            else:
+                # Upload to S3
+                if not s3_bucket:
+                    raise ValueError("S3_BUCKET_NAME environment variable is required in production environment")
+                
+                try:
+                    # Save to BytesIO object first
+                    excel_buffer = BytesIO()
+                    df.to_excel(excel_buffer, index=False)
+                    excel_buffer.seek(0)
+                    
+                    # Create full S3 key (path + filename)
+                    s3_key = f"{s3_key_prefix.rstrip('/')}/{filename}"
+                    
+                    # Upload file to S3
+                    if upload_fileobj(excel_buffer, s3_bucket, s3_key):
+                        s3_path = f"s3://{s3_bucket}/{s3_key}"
+                        logger.info(f"Uploaded property data to {s3_path}")
+                        print(f"📊 Uploaded complete property data to S3: {s3_path}")
+                        
+                        # Add S3 path to state
+                        state["excel_s3_path"] = s3_path
+                    else:
+                        error_message = "Failed to upload spreadsheet to S3"
+                        logger.error(error_message)
+                        raise Exception(error_message)
+                except Exception as e:
+                    error_message = f"S3 upload error: {str(e)}"
+                    logger.error(error_message)
+                    raise Exception(error_message)
 
         except Exception as e:
             logger.error(f"Error saving spreadsheet: {e}")
